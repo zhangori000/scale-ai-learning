@@ -1,0 +1,93 @@
+:root {
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f7f8fb;
+  color: #1c2230;
+}
+
+.page {
+  max-width: 840px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+button {
+  border: 1px solid #ccd4e2;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  background: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f0f4fb;
+}
+
+.meta {
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.panel {
+  background: white;
+  border: 1px solid #dde5f2;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.loading {
+  color: #2657d9;
+}
+
+.error {
+  color: #b51f1f;
+}
+
+.summary {
+  color: #5f6e87;
+}
+
+.tier {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  margin-left: 0.35rem;
+  font-weight: 700;
+}
+
+.tier.high {
+  color: #0a7a39;
+}
+
+.tier.medium {
+  color: #ab6c00;
+}
+
+.tier.low {
+  color: #7b2637;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 18, 32, 0.55);
+}
+
+.modal {
+  width: min(92vw, 420px);
+  background: white;
+  border-radius: 12px;
+  padding: 1rem;
+  border: 1px solid #d7ddea;
+}
