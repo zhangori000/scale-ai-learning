@@ -1,21 +1,16 @@
-# INF-04 Coding Round Editorial: Cursor Pagination Contracts and Validation
+﻿# INF-04 Coding Round Editorial: Cursor Pagination Contracts and Validation
 
 This chapter is a deep guide for building cursor pagination correctly when data changes while users scroll.
 
 Grounded source files:
 
-- `scale-agentex/agentex/src/utils/pagination.py`
-- `scale-agentex/agentex/src/api/routes/messages.py`
-- `scale-agentex/agentex/src/domain/services/task_message_service.py`
-- `scale-agentex/agentex/src/adapters/crud_store/adapter_mongodb.py`
+`scale-agentex/agentex/src/utils/pagination.py`. `scale-agentex/agentex/src/api/routes/messages.py`. `scale-agentex/agentex/src/domain/services/task_message_service.py`. `scale-agentex/agentex/src/adapters/crud_store/adapter_mongodb.py`.
 
 ## The Real Problem
 
 Cursor pagination is not an encoding trick. It is a long-term API contract between:
 
-1. sort order
-2. cursor payload
-3. boundary predicate
+sort order. cursor payload. boundary predicate.
 
 If these drift, you get duplicates, gaps, and unstable scroll behavior.
 
@@ -29,8 +24,7 @@ That means you must define deterministic ordering first.
 
 In this code family, reliable ordering is:
 
-1. primary: `created_at DESC`
-2. tie-breaker: `_id ASC`
+primary: `created_at DESC`. tie-breaker: `_id ASC`.
 
 Tie-breaker is mandatory because timestamps can collide.
 
@@ -42,9 +36,7 @@ They want to know whether you understand that pagination correctness is a data-c
 
 Contract fields:
 
-- cursor schema version
-- sort fields and direction
-- behavior for invalid/stale cursor
+cursor schema version. sort fields and direction. behavior for invalid/stale cursor.
 
 Do not code before writing this contract.
 
@@ -64,10 +56,7 @@ Why include version? So you can evolve schema without breaking old clients.
 
 Decode pipeline:
 
-1. base64 decode
-2. JSON parse
-3. schema validate
-4. version validate
+base64 decode. JSON parse. schema validate. version validate.
 
 On failure, return `400 invalid_cursor`.
 
@@ -79,11 +68,11 @@ Given descending time order:
 
 Older page predicate:
 
-- `created_at < anchor_ts` OR (`created_at == anchor_ts` AND `_id > anchor_id`)
+`created_at < anchor_ts` OR (`created_at == anchor_ts` AND `_id > anchor_id`).
 
 Newer page predicate:
 
-- `created_at > anchor_ts` OR (`created_at == anchor_ts` AND `_id < anchor_id`)
+`created_at > anchor_ts` OR (`created_at == anchor_ts` AND `_id < anchor_id`).
 
 This pair must be mathematically consistent.
 
@@ -91,8 +80,7 @@ This pair must be mathematically consistent.
 
 Always query one extra row.
 
-- extra row exists -> `has_more=true`
-- extra row missing -> `has_more=false`
+extra row exists -> `has_more=true`. extra row missing -> `has_more=false`.
 
 Then return first `limit` rows.
 
@@ -106,8 +94,7 @@ This keeps continuity stable.
 
 If anchor row was deleted, choose and document one policy:
 
-1. `409 cursor_not_found`
-2. empty page with reason code
+`409 cursor_not_found`. empty page with reason code.
 
 Undocumented fallback creates confusing client behavior.
 
@@ -137,12 +124,7 @@ If `M8` deleted before request 2, follow documented stale-cursor policy.
 
 ## Step 9: Implementation Order
 
-1. formalize sort + tie-break in repository
-2. implement strict decode/validate
-3. implement boundary predicate mapping
-4. implement limit+1 and cursor generation
-5. implement stale-anchor policy
-6. add tests
+formalize sort + tie-break in repository. implement strict decode/validate. implement boundary predicate mapping. implement limit+1 and cursor generation. implement stale-anchor policy. add tests.
 
 ## Step 10: Tests You Need
 
@@ -160,10 +142,7 @@ Test 6: inserts during pagination do not break already-traversed history.
 
 ## Common Mistakes
 
-1. missing tie-breaker
-2. silent invalid cursor fallback
-3. wrong comparison signs in older/newer predicates
-4. building next cursor from wrong row
+missing tie-breaker. silent invalid cursor fallback. wrong comparison signs in older/newer predicates. building next cursor from wrong row.
 
 ## Interview Wrap-Up Script
 

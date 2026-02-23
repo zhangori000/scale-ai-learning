@@ -1,4 +1,4 @@
-# DBG-05: Stream JSON Decode Crash in Consumer Loop (Debugging Essay)
+﻿# DBG-05: Stream JSON Decode Crash in Consumer Loop (Debugging Essay)
 
 This chapter explores a reliability bug where one malformed stream record kills the entire SSE stream. It is a classic liveness-versus-correctness boundary issue.
 
@@ -18,22 +18,16 @@ The key design principle for stream consumers is fault isolation:
 
 Debugging sequence:
 
-1. reproduce with one malformed record followed by one valid record
-2. confirm stream stops before valid record
-3. inspect exception handling scope
-4. verify no per-record try/except inside loop
+reproduce with one malformed record followed by one valid record. confirm stream stops before valid record. inspect exception handling scope. verify no per-record try/except inside loop.
 
 Patch pattern:
 
-- decode per message within try/except
-- on decode error: increment metric, structured log, continue loop
-- on successful decode: emit SSE frame with id
+decode per message within try/except. on decode error: increment metric, structured log, continue loop. on successful decode: emit SSE frame with id.
 
 Patched implementation:
 
 ```python
 import json
-
 
 async def stream_events(redis_messages, metrics, logger):
     async for message_id, fields in redis_messages:
@@ -55,9 +49,7 @@ async def stream_events(redis_messages, metrics, logger):
 
 Why this patch is correct:
 
-- liveness preserved for subsequent records
-- malformed input is measured and logged
-- replay/diagnosis remains possible via message ID
+liveness preserved for subsequent records. malformed input is measured and logged. replay/diagnosis remains possible via message ID.
 
 Regression test:
 
@@ -82,9 +74,7 @@ async def test_malformed_record_isolated():
 
 Do not forget observability in production:
 
-- decode error count
-- decode error rate by topic
-- first-seen malformed payload samples
+decode error count. decode error rate by topic. first-seen malformed payload samples.
 
 Interview close:
 

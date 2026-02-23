@@ -1,4 +1,4 @@
-# DBG-01: Cursor Pagination Duplication Bug (Debugging Essay)
+﻿# DBG-01: Cursor Pagination Duplication Bug (Debugging Essay)
 
 This chapter treats pagination duplication as a debugging investigation, not just a SQL patch. The practical goal is to train your diagnostic flow: how to reproduce, isolate, and prove a boundary-condition fix.
 
@@ -16,8 +16,7 @@ At first this looks reasonable. The bug appears when multiple rows share identic
 
 So there are two coupled defects:
 
-1. non-strict boundary on primary sort key
-2. missing tie-breaker for equal timestamps
+non-strict boundary on primary sort key. missing tie-breaker for equal timestamps.
 
 A strong debugging process starts by proving overlap directly. Fetch page 1, then page 2 with cursor from page 1 tail, and compare IDs. If intersection is non-empty, duplication is objective.
 
@@ -27,8 +26,7 @@ Correct model: use composite cursor and composite strict comparison.
 
 Sort order:
 
-- `created_at DESC`
-- `id DESC` (or another unique monotonic tie-breaker)
+`created_at DESC`. `id DESC` (or another unique monotonic tie-breaker).
 
 Boundary for next page:
 
@@ -74,9 +72,7 @@ def list_messages(repo, limit=20, cursor=None):
 
 Why this fix works:
 
-- tuple ordering defines a total order
-- strict `<` tuple predicate excludes boundary row
-- next cursor built from tail row preserves continuity
+tuple ordering defines a total order. strict `<` tuple predicate excludes boundary row. next cursor built from tail row preserves continuity.
 
 Regression tests should prove invariants, not implementation details.
 
@@ -91,7 +87,6 @@ def test_no_overlap(repo):
     p1 = list_messages(repo, limit=3)
     p2 = list_messages(repo, limit=3, cursor=p1["next_cursor"])
     assert {r["id"] for r in p1["data"]}.isdisjoint({r["id"] for r in p2["data"]})
-
 
 def test_same_timestamp_stable(repo):
     p1 = list_messages(repo, limit=1)

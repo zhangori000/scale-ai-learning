@@ -1,4 +1,4 @@
-# DBG-03: Retry-Induced Double Write (Debugging Essay)
+﻿# DBG-03: Retry-Induced Double Write (Debugging Essay)
 
 This chapter analyzes a high-impact reliability bug: retries that duplicate side effects. The concrete scenario is payment capture. The endpoint retries after timeout, and some customers are charged twice.
 
@@ -22,10 +22,7 @@ So this is not a retry-count issue. It is a missing idempotency contract issue.
 
 Debugging sequence:
 
-1. correlate duplicate charges with timeout/retry logs
-2. inspect whether requests share logical operation identity (`order_id`)
-3. verify provider API supports idempotency keys
-4. confirm client code does not send stable key across retries
+correlate duplicate charges with timeout/retry logs. inspect whether requests share logical operation identity (`order_id`). verify provider API supports idempotency keys. confirm client code does not send stable key across retries.
 
 Correct fix:
 
@@ -62,15 +59,11 @@ async def test_timeout_retry_not_double_charge(fake_gateway):
 
 Additional test:
 
-- simulate timeout on first attempt, success on second
-- verify exactly one financial side effect
+simulate timeout on first attempt, success on second. verify exactly one financial side effect.
 
 Operational metrics to monitor after fix:
 
-1. timeout rate
-2. retry rate
-3. duplicate-key replay rate
-4. provider idempotency conflict responses
+timeout rate. retry rate. duplicate-key replay rate. provider idempotency conflict responses.
 
 These metrics catch contract regressions quickly.
 

@@ -1,4 +1,4 @@
-# INF-04 Debugging Editorial: Cursor Pagination Contracts and Validation
+﻿# INF-04 Debugging Editorial: Cursor Pagination Contracts and Validation
 
 This chapter is a detailed debugging guide for cursor pagination failures.
 
@@ -6,9 +6,7 @@ This chapter is a detailed debugging guide for cursor pagination failures.
 
 Users report:
 
-- duplicate rows between pages
-- missing rows while scrolling
-- pagination jumps after refresh
+duplicate rows between pages. missing rows while scrolling. pagination jumps after refresh.
 
 These are usually not frontend rendering bugs. They are contract bugs between cursor encoding, sort order, and boundary predicates.
 
@@ -22,52 +20,33 @@ Without this baseline, debugging stays anecdotal.
 
 ## 3. Contract Components To Audit
 
-1. deterministic sort order and tie-breaker
-2. cursor payload fields
-3. cursor decode/validation behavior
-4. boundary predicate for older/newer traversal
-5. stale-cursor handling behavior
+deterministic sort order and tie-breaker. cursor payload fields. cursor decode/validation behavior. boundary predicate for older/newer traversal. stale-cursor handling behavior.
 
 Any mismatch creates instability.
 
 ## 4. Common Bug Classes
 
-- timestamp-only ordering without unique tie-breaker
-- malformed cursor silently ignored
-- predicate sign inversion on tie-break field
-- stale anchor fallback to first page without explicit signal
+timestamp-only ordering without unique tie-breaker. malformed cursor silently ignored. predicate sign inversion on tie-break field. stale anchor fallback to first page without explicit signal.
 
 ## 5. Reproduction Plan
 
-1. seed data with equal timestamps to stress tie-breaking
-2. fetch page 1 and page 2
-3. check overlap and gaps
-4. delete anchor row and retry with cursor
-5. send malformed cursor
+seed data with equal timestamps to stress tie-breaking. fetch page 1 and page 2. check overlap and gaps. delete anchor row and retry with cursor. send malformed cursor.
 
 This sequence covers most real failures quickly.
 
 ## 6. Patch Guidelines
 
-- enforce composite order (for example created_at + id)
-- enforce strict cursor decode validation (`400 invalid_cursor`)
-- align older/newer predicates exactly with chosen ordering
-- define explicit stale-anchor policy
+enforce composite order (for example created_at + id). enforce strict cursor decode validation (`400 invalid_cursor`). align older/newer predicates exactly with chosen ordering. define explicit stale-anchor policy.
 
 ## 7. Post-Patch Invariants
 
-1. no overlap between consecutive pages
-2. no missing rows across full traversal
-3. equal-timestamp rows remain deterministic
-4. invalid cursor never silently resets traversal
+no overlap between consecutive pages. no missing rows across full traversal. equal-timestamp rows remain deterministic. invalid cursor never silently resets traversal.
 
 ## 8. Observability
 
 Instrument:
 
-- invalid_cursor_total
-- stale_cursor_total
-- pagination_overlap_detected (test/probe metric)
+invalid_cursor_total. stale_cursor_total. pagination_overlap_detected (test/probe metric).
 
 Add request logs with cursor hash/version for traceability.
 

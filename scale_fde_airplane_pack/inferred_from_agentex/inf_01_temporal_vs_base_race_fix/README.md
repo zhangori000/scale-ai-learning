@@ -1,10 +1,10 @@
-# INF-01 Coding Round Editorial: Temporal vs Base Async Race Fix
+﻿# INF-01 Coding Round Editorial: Temporal vs Base Async Race Fix
 
 This chapter is intentionally written as a long essay instead of a short checklist. The purpose is simple: if you are new to race conditions, you should be able to read this from top to bottom and feel like you finally understand not only what the bug is, but why it appears, why it is hard to detect, and why certain fixes work while others only look convincing.
 
 Everything here is grounded in the `scale-agentex` race condition guide:
 
-- `scale-agentex/agentex/docs/docs/development_guides/race_conditions.md`
+`scale-agentex/agentex/docs/docs/development_guides/race_conditions.md`.
 
 ## Abstract
 
@@ -16,8 +16,7 @@ Temporal-based execution gives you one answer by design: serialized signal handl
 
 Imagine one agent task. Two user events arrive almost simultaneously.
 
-Event A: "increment processing_count"
-Event B: "increment processing_count"
+Event A: "increment processing_count" Event B: "increment processing_count"
 
 Suppose the current value is `0`.
 
@@ -54,18 +53,13 @@ At first glance this looks reasonable. It reads state, computes next state, writ
 
 The vulnerable shape is called read-modify-write:
 
-1. read current value
-2. compute new value from current value
-3. write computed value
+read current value. compute new value from current value. write computed value.
 
 If two executions overlap, each may read the same old value. The second write overwrites the first. This is sometimes called a lost update anomaly.
 
 Let us write the timeline:
 
-T1 reads `count=0`
-T2 reads `count=0`
-T1 writes `count=1`
-T2 writes `count=1`
+T1 reads `count=0` T2 reads `count=0` T1 writes `count=1` T2 writes `count=1`
 
 Both operations "succeeded." Final state is wrong.
 
@@ -73,15 +67,11 @@ Both operations "succeeded." Final state is wrong.
 
 In local testing:
 
-1. events often arrive one at a time
-2. CPU scheduling is stable
-3. network latency is low
+events often arrive one at a time. CPU scheduling is stable. network latency is low.
 
 Under production conditions:
 
-1. multiple clients hit same task quickly
-2. retries amplify concurrency
-3. webhook bursts create concurrent handlers
+multiple clients hit same task quickly. retries amplify concurrency. webhook bursts create concurrent handlers.
 
 So the same code moves from "looks fine" to "silently corrupting state."
 
@@ -89,9 +79,7 @@ So the same code moves from "looks fine" to "silently corrupting state."
 
 When an interviewer gives this problem, they are usually not checking if you can say "use lock." They are checking whether you can do three things in sequence:
 
-1. model the failure precisely
-2. define the correctness invariant
-3. choose a solution whose guarantees match that invariant
+model the failure precisely. define the correctness invariant. choose a solution whose guarantees match that invariant.
 
 If you jump directly to tool names without clear failure model, your answer sounds shallow.
 
@@ -178,17 +166,13 @@ This gives you resumability after crash and a stable source of truth for progres
 
 Consider wrong order:
 
-1. advance cursor to E100
-2. then write state for E100
-3. write fails
+advance cursor to E100. then write state for E100. write fails.
 
 Now cursor says E100 is done, but state is not. On restart, E100 is skipped. Data loss.
 
 Correct order:
 
-1. apply state changes for batch
-2. commit
-3. include cursor movement in same transaction
+apply state changes for batch. commit. include cursor movement in same transaction.
 
 If transaction fails, neither state nor cursor moves.
 
@@ -212,13 +196,11 @@ Now we move from concept to code.
 
 You need three storage concepts:
 
-1. Event log table/stream with monotonic event IDs.
-2. Task state table/document.
-3. Tracker row with `last_processed_event_id`.
+Event log table/stream with monotonic event IDs. Task state table/document. Tracker row with `last_processed_event_id`.
 
 Optional but recommended:
 
-4. Dedupe table for applied event IDs.
+Dedupe table for applied event IDs.
 
 ### 13.2 Repository interfaces
 
@@ -272,9 +254,7 @@ async def process_task_events(task_id: str, batch_size: int = 50) -> None:
 
 The code above captures the key invariants:
 
-1. forward-only read
-2. idempotent apply
-3. cursor advancement in same commit boundary
+forward-only read. idempotent apply. cursor advancement in same commit boundary.
 
 ## 14. A Worked Timeline Through Failure
 
@@ -341,11 +321,7 @@ Now compare with cursor+idempotent pipeline test where assertion should hold.
 
 Instrumentation should include:
 
-1. `events_fetched_total`
-2. `events_applied_total`
-3. `events_deduped_total`
-4. `cursor_lag` (latest_event_id minus cursor)
-5. `batch_commit_latency_ms`
+`events_fetched_total`. `events_applied_total`. `events_deduped_total`. `cursor_lag` (latest_event_id minus cursor). `batch_commit_latency_ms`.
 
 If dedupe spikes abnormally, you may have retry storm. If cursor lag grows, you may be underprovisioned or blocked.
 
@@ -355,16 +331,11 @@ A strong interview answer mentions at least one correctness metric and one lag m
 
 Assume:
 
-1. event IDs are totally ordered per task
-2. `list_after(cursor)` returns only IDs greater than cursor
-3. cursor updates and state updates are in one atomic transaction
-4. apply operation is idempotent per event ID
+event IDs are totally ordered per task. `list_after(cursor)` returns only IDs greater than cursor. cursor updates and state updates are in one atomic transaction. apply operation is idempotent per event ID.
 
 Then:
 
-1. cursor never goes backward
-2. no committed event effect is permanently skipped
-3. repeated processing of same event does not create repeated effect
+cursor never goes backward. no committed event effect is permanently skipped. repeated processing of same event does not create repeated effect.
 
 Therefore final state equals deterministic fold of unique processed events in order, even across crashes and retries.
 
@@ -374,8 +345,7 @@ That is the practical correctness statement interviewers want.
 
 The Agentex guide teaches two key ideas:
 
-1. Temporal processes events sequentially in workflow context, which naturally avoids many concurrent state races.
-2. Base async can be made safe with tracker-cursor based coordinated processing and careful update ordering.
+Temporal processes events sequentially in workflow context, which naturally avoids many concurrent state races. Base async can be made safe with tracker-cursor based coordinated processing and careful update ordering.
 
 This chapter took those ideas and expanded them into an implementation editorial with concrete code and reasoning.
 

@@ -1,4 +1,4 @@
-# DBG-02: Async Lost Update Race (Debugging Essay)
+﻿# DBG-02: Async Lost Update Race (Debugging Essay)
 
 This chapter is about the most dangerous category of concurrency bug: the system stays up, logs look normal, and state drifts wrong. The observed symptom is undercounting on a field that should increment exactly once per event.
 
@@ -19,23 +19,18 @@ Root cause is read-modify-write under concurrency.
 
 Two concurrent executions can do:
 
-- read same old value
-- compute same incremented value
-- write same result
+read same old value. compute same incremented value. write same result.
 
 One increment is lost.
 
 Debugging methodology:
 
-1. reproduce with high concurrency using `asyncio.gather`
-2. log before-read and after-write values
-3. verify final count < expected count
+reproduce with high concurrency using `asyncio.gather`. log before-read and after-write values. verify final count < expected count.
 
 Repro test:
 
 ```python
 import asyncio
-
 
 async def test_lost_updates(repo):
     task_id = "t1"
@@ -64,17 +59,13 @@ WHERE task_id = :task_id;
 
 Why atomic update works:
 
-- no stale read in application layer
-- increment happens inside single storage operation
-- concurrent increments compose correctly
+no stale read in application layer. increment happens inside single storage operation. concurrent increments compose correctly.
 
 If mutation is more complex than numeric increments, alternatives are optimistic locking or per-entity serialized processing. But for this specific bug class, atomic increment is ideal.
 
 Post-fix verification:
 
-1. rerun concurrency test at larger scale
-2. run with multiple worker processes if relevant
-3. check production metric "events processed vs expected"
+rerun concurrency test at larger scale. run with multiple worker processes if relevant. check production metric "events processed vs expected".
 
 Important anti-pattern: adding in-process lock without understanding deployment topology. If you run multiple pods, local lock only serializes per process, not globally.
 

@@ -1,12 +1,10 @@
-# INF-02 Coding Round Editorial: Redis Stream Replay and Offset Handling
+﻿# INF-02 Coding Round Editorial: Redis Stream Replay and Offset Handling
 
 This chapter is a full walkthrough for one of the most common backend interview traps: streaming works during the happy path, but reconnect behavior is inconsistent and nobody can explain exactly why. The goal is to make you comfortable enough that if an interviewer gives you this problem cold, you can build a correct solution from first principles.
 
 Grounded source files in the Agentex codebase:
 
-- `scale-agentex/agentex/src/adapters/streams/adapter_redis.py`
-- `scale-agentex/agentex/src/domain/use_cases/streams_use_case.py`
-- `scale-agentex/agentex/src/api/routes/tasks.py`
+`scale-agentex/agentex/src/adapters/streams/adapter_redis.py`. `scale-agentex/agentex/src/domain/use_cases/streams_use_case.py`. `scale-agentex/agentex/src/api/routes/tasks.py`.
 
 ## What Problem Are We Actually Solving?
 
@@ -18,8 +16,7 @@ When client connections drop and reconnect, the server must answer one precise q
 
 If you do not define this clearly, you get two bad outcomes:
 
-1. Silent data loss: events are skipped after reconnect.
-2. Silent duplication: same event appears multiple times with no dedupe strategy.
+Silent data loss: events are skipped after reconnect. Silent duplication: same event appears multiple times with no dedupe strategy.
 
 Both outcomes happen in real systems even when the code "looks fine."
 
@@ -27,18 +24,13 @@ Both outcomes happen in real systems even when the code "looks fine."
 
 Think of this as three moving positions that must stay coherent:
 
-1. Redis stream position: the server's source-of-truth ID sequence.
-2. Server read position: the `last_id` used in each `XREAD` call.
-3. Client receive position: the last event that actually reached the client.
+Redis stream position: the server's source-of-truth ID sequence. Server read position: the `last_id` used in each `XREAD` call. Client receive position: the last event that actually reached the client.
 
 If these positions drift without explicit contract, reconnect semantics become accidental.
 
 ## Small Vocabulary Primer (So We Do Not Hand-Wave)
 
-- Redis Stream ID: monotonic identifier like `1700000000000-0`.
-- SSE: server sends text frames over HTTP (`text/event-stream`).
-- Resume cursor: event ID the client sends back on reconnect.
-- Retention trim: old stream events removed because max length is bounded.
+Redis Stream ID: monotonic identifier like `1700000000000-0`. SSE: server sends text frames over HTTP (`text/event-stream`). Resume cursor: event ID the client sends back on reconnect. Retention trim: old stream events removed because max length is bounded.
 
 You should be able to define these in one sentence each during interview.
 
@@ -48,8 +40,7 @@ Most candidates can stream live data. Fewer can design replay semantics under tr
 
 Interviewers are testing whether you can do both:
 
-1. Build the pipeline.
-2. Define correctness policy for failure paths.
+Build the pipeline. Define correctness policy for failure paths.
 
 ## Codebase Tour: What Agentex Already Gives You
 
@@ -88,25 +79,19 @@ So the core building blocks already exist. The missing piece in many interview v
 
 Naive version:
 
-1. On connect, start at `$` always.
-2. Stream live events only.
-3. Ignore reconnect cursor.
+On connect, start at `$` always. Stream live events only. Ignore reconnect cursor.
 
 Why it fails:
 
-- If client disconnects for 5 seconds and 20 events occur, all 20 are lost.
-- System looks healthy but user state is stale.
+If client disconnects for 5 seconds and 20 events occur, all 20 are lost. System looks healthy but user state is stale.
 
 Another naive version:
 
-1. Accept cursor.
-2. If invalid, silently restart from `$`.
+Accept cursor. If invalid, silently restart from `$`.
 
 Why it fails:
 
-- Client thinks it resumed from a concrete point.
-- Server actually skipped unknown range.
-- Silent correctness bug.
+Client thinks it resumed from a concrete point. Server actually skipped unknown range. Silent correctness bug.
 
 ## Step 0: Define The Contract In Plain English
 
@@ -114,9 +99,7 @@ Do this before writing any code.
 
 Contract:
 
-1. No cursor -> live-only stream from now (`$`).
-2. Valid cursor -> replay events with ID greater than cursor.
-3. Expired cursor (trimmed history) -> explicit response (`409 cursor_expired`) or explicit gap event.
+No cursor -> live-only stream from now (`$`). Valid cursor -> replay events with ID greater than cursor. Expired cursor (trimmed history) -> explicit response (`409 cursor_expired`) or explicit gap event.
 
 The critical part is explicitness. No hidden fallback.
 
@@ -124,8 +107,7 @@ The critical part is explicitness. No hidden fallback.
 
 Choose one input path and be consistent:
 
-1. HTTP `Last-Event-ID` header (SSE-native).
-2. Query param `cursor`.
+HTTP `Last-Event-ID` header (SSE-native). Query param `cursor`.
 
 Either is acceptable. Just document precedence if both are present.
 
@@ -181,13 +163,11 @@ You need one explicit policy. Pick one.
 
 Policy A (strict, recommended in enterprise APIs):
 
-- return `409 cursor_expired`
-- client must reload snapshot and restart stream
+return `409 cursor_expired`. client must reload snapshot and restart stream.
 
 Policy B (lossy continuity):
 
-- jump to `$`
-- emit control event like `gap_detected`
+jump to `$`. emit control event like `gap_detected`.
 
 Never hide which policy you chose.
 
@@ -197,8 +177,7 @@ SSE does not provide strong per-message acknowledgement back to server in most d
 
 So practical semantics are usually:
 
-- server provides at-least-once replay support via event IDs
-- client dedupes by `id`
+server provides at-least-once replay support via event IDs. client dedupes by `id`.
 
 If interviewer asks "exactly once?" answer:
 
@@ -212,10 +191,7 @@ From codebase, payload is JSON inside Redis field `data`.
 
 Decoder should be defensive:
 
-1. check field exists
-2. decode bytes to utf-8
-3. parse JSON
-4. on failure, log and continue
+check field exists. decode bytes to utf-8. parse JSON. on failure, log and continue.
 
 Do not crash entire stream because one payload is malformed.
 
@@ -223,23 +199,17 @@ Do not crash entire stream because one payload is malformed.
 
 Interviewers like practical controls:
 
-1. batch size (`count`) to cap per-iteration load
-2. block timeout to avoid hot spin
-3. keepalive ping for idle proxies
-4. retention maxlen tuned to reconnect window
+batch size (`count`) to cap per-iteration load. block timeout to avoid hot spin. keepalive ping for idle proxies. retention maxlen tuned to reconnect window.
 
 State the retention tradeoff explicitly:
 
-- small maxlen saves memory
-- large maxlen improves replay window
+small maxlen saves memory. large maxlen improves replay window.
 
 ## Step 8: Worked Timeline Example
 
 Imagine stream IDs:
 
-- E1: `100-0`
-- E2: `101-0`
-- E3: `102-0`
+E1: `100-0`. E2: `101-0`. E3: `102-0`.
 
 Client receives E1, E2, then disconnects.
 
@@ -253,11 +223,7 @@ This simple timeline is excellent in interviews.
 
 ## Step 9: Full Implementation Sequence (What To Code First)
 
-1. Add resume cursor resolver in route.
-2. Pass resume cursor into stream use case.
-3. Emit SSE `id:` lines.
-4. Add cursor-expiry policy path.
-5. Add tests.
+Add resume cursor resolver in route. Pass resume cursor into stream use case. Emit SSE `id:` lines. Add cursor-expiry policy path. Add tests.
 
 Coding in this order avoids backtracking.
 
@@ -277,11 +243,7 @@ Test 6: keepalive works during idle periods.
 
 ## Common Mistakes To Avoid
 
-1. Storing cursor in memory only and losing it across reconnect.
-2. Forgetting `id:` in SSE frame.
-3. Silently falling back when cursor invalid.
-4. Returning giant unbounded batches.
-5. Crashing stream loop on one bad JSON payload.
+Storing cursor in memory only and losing it across reconnect. Forgetting `id:` in SSE frame. Silently falling back when cursor invalid. Returning giant unbounded batches. Crashing stream loop on one bad JSON payload.
 
 ## Interview Wrap-Up Script
 

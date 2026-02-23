@@ -1,4 +1,4 @@
-# INF-03 Debugging Editorial: Auth Cache Negative Entry Policy
+﻿# INF-03 Debugging Editorial: Auth Cache Negative Entry Policy
 
 This chapter explains how to debug authorization lockouts caused by incorrect negative-cache behavior.
 
@@ -6,9 +6,7 @@ This chapter explains how to debug authorization lockouts caused by incorrect ne
 
 System behavior:
 
-- known-valid credentials suddenly receive `401`
-- lockout persists even after auth backend is healthy
-- duration often aligns with cache TTL
+known-valid credentials suddenly receive `401`. lockout persists even after auth backend is healthy. duration often aligns with cache TTL.
 
 This TTL-aligned symptom is a strong indicator of cache poisoning.
 
@@ -24,9 +22,7 @@ If failures are cache-served, root cause is policy classification, not immediate
 
 A robust auth system distinguishes:
 
-1. definitive invalid credential
-2. definitive valid credential
-3. temporary verification failure (timeout/5xx/outage)
+definitive invalid credential. definitive valid credential. temporary verification failure (timeout/5xx/outage).
 
 Poisoning occurs when class 3 is cached as class 1.
 
@@ -34,10 +30,7 @@ Poisoning occurs when class 3 is cached as class 1.
 
 Collect four timestamps:
 
-1. first auth backend degradation
-2. first cached deny event
-3. backend recovery time
-4. final lockout disappearance
+first auth backend degradation. first cached deny event. backend recovery time. final lockout disappearance.
 
 If (4 - 3) approximately equals negative TTL, you have strong evidence of poisoned negative cache.
 
@@ -53,26 +46,19 @@ That pattern is unsafe.
 
 Reproduce with controlled sequence:
 
-1. valid key request during induced verifier timeout
-2. verify failure response
-3. restore verifier
-4. retry same key immediately
+valid key request during induced verifier timeout. verify failure response. restore verifier. retry same key immediately.
 
 If immediate retry still denied from cache, poisoning is confirmed.
 
 ## 7. Patch Principles
 
-1. negative-cache only definitive invalid credentials
-2. do not negative-cache temporary verifier failures
-3. keep negative TTL short
-4. invalidate auth cache on key rotation/revocation events
+negative-cache only definitive invalid credentials. do not negative-cache temporary verifier failures. keep negative TTL short. invalidate auth cache on key rotation/revocation events.
 
 ## 8. Validation Strategy
 
 After patch, rerun timeline sequence:
 
-- outage request fails but does not poison cache
-- first post-recovery request succeeds
+outage request fails but does not poison cache. first post-recovery request succeeds.
 
 Also validate true-invalid credentials still benefit from short negative cache.
 
@@ -80,10 +66,7 @@ Also validate true-invalid credentials still benefit from short negative cache.
 
 Add/track:
 
-- negative_cache_hit_total
-- temp_verifier_failure_total
-- negative_cache_write_total by reason
-- post-rotation-auth-failure rate
+negative_cache_hit_total. temp_verifier_failure_total. negative_cache_write_total by reason. post-rotation-auth-failure rate.
 
 This prevents slow reintroduction of lockout behavior.
 

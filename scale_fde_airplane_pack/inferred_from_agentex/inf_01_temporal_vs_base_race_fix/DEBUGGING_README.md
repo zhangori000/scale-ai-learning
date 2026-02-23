@@ -1,4 +1,4 @@
-# INF-01 Debugging Editorial: Temporal vs Base Async Race Fix
+﻿# INF-01 Debugging Editorial: Temporal vs Base Async Race Fix
 
 This is the long-form debugging chapter for race-condition incidents in asynchronous task processing systems. The goal is not only to show the fix, but to teach a reproducible forensic method you can use in an interview or a real outage.
 
@@ -33,19 +33,11 @@ If assertion fails intermittently, keep this harness. It becomes your regression
 
 Add temporary instrumentation at read and write boundaries:
 
-- task_id
-- event_id
-- value_before_read
-- value_before_write
-- value_after_write
-- timestamp and worker id
+task_id. event_id. value_before_read. value_before_write. value_after_write. timestamp and worker id.
 
 You are looking for this pattern:
 
-1. handler A reads X
-2. handler B reads X
-3. handler A writes X+1
-4. handler B writes X+1
+handler A reads X. handler B reads X. handler A writes X+1. handler B writes X+1.
 
 That sequence proves lost update.
 
@@ -73,15 +65,11 @@ Temporal workflows differ because signal handling is serialized per workflow ins
 
 Robust solution has three coordinated controls:
 
-1. durable per-task progress cursor (`last_processed_event_id`)
-2. atomic batch apply plus cursor advance in same transaction
-3. idempotent event application
+durable per-task progress cursor (`last_processed_event_id`). atomic batch apply plus cursor advance in same transaction. idempotent event application.
 
 Why all three:
 
-- cursor alone does not prevent duplicate effect on replay
-- idempotency alone does not prevent missing events if cursor jumps early
-- atomicity alone does not provide resumable ordering semantics
+cursor alone does not prevent duplicate effect on replay. idempotency alone does not prevent missing events if cursor jumps early. atomicity alone does not provide resumable ordering semantics.
 
 ## 8. Failure-Window Validation
 
@@ -89,20 +77,17 @@ Test two crash windows explicitly:
 
 Window A: crash before commit
 
-- expected: no cursor movement, no durable state movement
+expected: no cursor movement, no durable state movement.
 
 Window B: crash after commit but before ack/report
 
-- expected: replay may occur, idempotency prevents duplicate effect
+expected: replay may occur, idempotency prevents duplicate effect.
 
 If either fails, patch is incomplete.
 
 ## 9. Regression Suite You Should Keep
 
-1. high-concurrency same-task burst test
-2. crash-before-cursor-advance test
-3. duplicate event replay test
-4. multi-task parallelism isolation test
+high-concurrency same-task burst test. crash-before-cursor-advance test. duplicate event replay test. multi-task parallelism isolation test.
 
 These tests should become permanent because race regressions are easy to reintroduce.
 
@@ -110,10 +95,7 @@ These tests should become permanent because race regressions are easy to reintro
 
 Add metrics:
 
-- processed_events_total
-- deduped_events_total
-- cursor_lag
-- failed_batch_commits
+processed_events_total. deduped_events_total. cursor_lag. failed_batch_commits.
 
 A rising dedupe rate might indicate upstream retry storm; rising cursor lag indicates underprovisioning or lock contention.
 

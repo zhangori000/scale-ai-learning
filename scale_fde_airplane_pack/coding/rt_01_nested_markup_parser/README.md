@@ -1,4 +1,4 @@
-# RT-01: Nested Rich Text Markup Parser (Essay Editorial)
+﻿# RT-01: Nested Rich Text Markup Parser (Essay Editorial)
 
 This chapter is a slow, deliberate walkthrough of a parsing problem that appears simple on paper and then fails in edge cases during implementation. If you are preparing for coding rounds, this style of question is common because it tests whether you can turn grammar rules into a deterministic algorithm while preserving correctness under malformed input.
 
@@ -50,19 +50,15 @@ A full reference implementation is below.
 from dataclasses import dataclass
 from typing import List, Tuple
 
-
 class ParseError(ValueError):
     pass
 
-
 ALLOWED = {"b", "i", "code"}
-
 
 @dataclass(eq=True)
 class Span:
     text: str
     styles: Tuple[str, ...]
-
 
 def parse_rich_text(source: str) -> List[Span]:
     spans: List[Span] = []
@@ -146,11 +142,9 @@ def test_nested():
         Span("C", ("b",)),
     ]
 
-
 def test_merge_adjacent():
     out = parse_rich_text("[b]A[/b][b]B[/b]")
     assert out == [Span("AB", ("b",))]
-
 
 def test_mismatch():
     try:
@@ -158,7 +152,6 @@ def test_mismatch():
     except ParseError:
         return
     raise AssertionError("expected ParseError")
-
 
 def test_unclosed():
     try:
@@ -180,9 +173,7 @@ This appendix deepens parser reasoning and gives a formal lens for why the stack
 
 You can model this mini language with tokens:
 
-- text char
-- open tag `[name]`
-- close tag `[/name]`
+text char. open tag `[name]`. close tag `[/name]`.
 
 The nesting rule implies well-formedness is equivalent to balanced, properly ordered delimiters. That is exactly what a stack validates.
 
@@ -202,11 +193,7 @@ Without canonicalization, two semantically equal parses can produce different sp
 
 Useful parse errors to surface:
 
-1. unknown tag
-2. unclosed tag opener
-3. unexpected close when stack empty
-4. mismatched close vs stack top
-5. non-empty stack at end
+unknown tag. unclosed tag opener. unexpected close when stack empty. mismatched close vs stack top. non-empty stack at end.
 
 Position-aware errors dramatically improve debugging and candidate signal in interviews.
 
@@ -224,538 +211,13 @@ If interviewer asks for escaping, add lexer phase with escape handling before pa
 
 ## Algorithmic Foundations For This Problem
 
-Restate input and output contract in deterministic terms.
-Define tie-breakers explicitly.
-Define malformed-input behavior explicitly.
+Restate input and output contract in deterministic terms. Define tie-breakers explicitly. Define malformed-input behavior explicitly.
 
-Write invariants before coding.
-Invariants reduce logical bugs.
-Examples include deterministic ordering and no duplicate contribution.
+Write invariants before coding. Invariants reduce logical bugs. Examples include deterministic ordering and no duplicate contribution.
 
-Choose data structures based on semantics.
-Use map for dedupe and latest-by-key patterns.
-Use heap for progressive ordering extraction.
-Use stack for nested grammar.
-Use deque for sliding windows.
+Choose data structures based on semantics. Use map for dedupe and latest-by-key patterns. Use heap for progressive ordering extraction. Use stack for nested grammar. Use deque for sliding windows.
 
-Separate transformation phase from aggregation phase when semantics differ.
-Dry-run tiny examples before implementation.
-Then scale to stress tests.
+Separate transformation phase from aggregation phase when semantics differ. Dry-run tiny examples before implementation. Then scale to stress tests.
 
-Complexity should be explained phase-by-phase.
-Prefer clarity first, then optimize if bottlenecks are measured.
+Complexity should be explained phase-by-phase. Prefer clarity first, then optimize if bottlenecks are measured.
 
-### Extended Teaching Block 1
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 2
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 3
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 4
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 5
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 6
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 7
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 8
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 9
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 10
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 11
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 12
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 13
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 14
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 15
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 16
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 17
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 18
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 19
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 20
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 21
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 22
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 23
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 24
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 25
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 26
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 27
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 28
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 29
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 30
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 31
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 32
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 33
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 34
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 35
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 36
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 37
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 38
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 39
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 40
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 41
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 42
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).

@@ -1,4 +1,4 @@
-# INF-05 Debugging Editorial: Transactional Rollback Boundary
+﻿# INF-05 Debugging Editorial: Transactional Rollback Boundary
 
 This chapter details how to debug and fix incidents where database state commits but external side effects are missing, delayed, or duplicated.
 
@@ -6,9 +6,7 @@ This chapter details how to debug and fix incidents where database state commits
 
 Common report:
 
-- business row exists in DB
-- downstream action did not happen
-- no request-level exception visible to user
+business row exists in DB. downstream action did not happen. no request-level exception visible to user.
 
 This pattern indicates a transaction boundary mismatch.
 
@@ -16,10 +14,7 @@ This pattern indicates a transaction boundary mismatch.
 
 Ask in order:
 
-1. did DB transaction commit?
-2. was side-effect intent durably recorded?
-3. was external publish/send attempted?
-4. was send ack persisted?
+did DB transaction commit? was side-effect intent durably recorded? was external publish/send attempted? was send ack persisted?
 
 These questions isolate where reliability guarantee broke.
 
@@ -38,8 +33,7 @@ Inject failure right after DB commit and before external completion.
 
 Expected in broken design:
 
-- DB row present
-- no downstream event
+DB row present. no downstream event.
 
 This turns conceptual bug into measurable failure.
 
@@ -47,10 +41,7 @@ This turns conceptual bug into measurable failure.
 
 Use transactional outbox:
 
-1. write business data + outbox record in same transaction
-2. commit
-3. worker sends outbox records with retry
-4. mark delivered on success
+write business data + outbox record in same transaction. commit. worker sends outbox records with retry. mark delivered on success.
 
 This preserves delivery intent even when external system fails.
 
@@ -58,10 +49,7 @@ This preserves delivery intent even when external system fails.
 
 If outbox already exists, inspect:
 
-- backlog age
-- retry attempts
-- dead-letter growth
-- worker heartbeat
+backlog age. retry attempts. dead-letter growth. worker heartbeat.
 
 Many incidents are operational (stuck workers, bad retry policy), not design-level.
 
@@ -73,19 +61,13 @@ Without idempotency, fixing missing side effects can create duplicate side effec
 
 ## 8. Validation Matrix
 
-1. external transient failure -> pending then delivered
-2. external permanent failure -> dead-letter and alert
-3. crash after send before mark-delivered -> safe duplicate replay
-4. rollback before commit -> no outbox row and no business row
+external transient failure -> pending then delivered. external permanent failure -> dead-letter and alert. crash after send before mark-delivered -> safe duplicate replay. rollback before commit -> no outbox row and no business row.
 
 ## 9. Metrics
 
 Track:
 
-- outbox_pending_count
-- outbox_oldest_age
-- outbox_retry_total
-- outbox_dead_letter_total
+outbox_pending_count. outbox_oldest_age. outbox_retry_total. outbox_dead_letter_total.
 
 These metrics make reliability visible.
 

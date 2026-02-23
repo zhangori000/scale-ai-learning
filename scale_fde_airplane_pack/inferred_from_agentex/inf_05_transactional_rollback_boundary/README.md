@@ -1,12 +1,10 @@
-# INF-05 Coding Round Editorial: Transactional Rollback Boundary
+﻿# INF-05 Coding Round Editorial: Transactional Rollback Boundary
 
 This chapter is a deep guide for a practical backend interview problem: SQL rollback works, but your workflow also talks to external systems.
 
 Grounded source files:
 
-- `scale-agentex/agentex/tests/unit/infrastructure/test_transactional_proof.py`
-- `scale-agentex/agentex/src/domain/services/task_service.py`
-- `scale-agentex/agentex/src/domain/use_cases/tasks_use_case.py`
+`scale-agentex/agentex/tests/unit/infrastructure/test_transactional_proof.py`. `scale-agentex/agentex/src/domain/services/task_service.py`. `scale-agentex/agentex/src/domain/use_cases/tasks_use_case.py`.
 
 ## The Real Problem
 
@@ -20,8 +18,7 @@ So the real question is:
 
 Split the workflow into two guarantees:
 
-1. Atomic state change in DB.
-2. Reliable eventual side effect outside DB.
+Atomic state change in DB. Reliable eventual side effect outside DB.
 
 If you try to do both inline in one function call, partial failures will create inconsistency.
 
@@ -52,8 +49,7 @@ Failure between these lines means DB committed but external side effect missing.
 
 Inside one DB transaction, write:
 
-1. business row(s)
-2. outbox row describing intended external action
+business row(s). outbox row describing intended external action.
 
 Then commit once.
 
@@ -63,13 +59,7 @@ This guarantees side-effect intent is never lost.
 
 Minimum fields:
 
-- `id`
-- `event_type`
-- `payload`
-- `status` (`PENDING`, `DELIVERED`, `DEAD_LETTER`)
-- `attempts`
-- `next_attempt_at`
-- timestamps
+`id`. `event_type`. `payload`. `status` (`PENDING`, `DELIVERED`, `DEAD_LETTER`). `attempts`. `next_attempt_at`. timestamps.
 
 ## Step 4: Producer Transaction
 
@@ -113,9 +103,7 @@ Without this, retry logic creates duplicates.
 
 After max attempts:
 
-1. mark row `DEAD_LETTER`
-2. alert operators
-3. provide replay tooling
+mark row `DEAD_LETTER`. alert operators. provide replay tooling.
 
 Do not silently drop permanently failing rows.
 
@@ -123,28 +111,21 @@ Do not silently drop permanently failing rows.
 
 Scenario:
 
-1. request creates event row
-2. process crashes before external send
+request creates event row. process crashes before external send.
 
 With outbox:
 
-- outbox row still `PENDING`
-- worker later sends successfully
+outbox row still `PENDING`. worker later sends successfully.
 
 Without outbox:
 
-- downstream never sees event
-- intent lost
+downstream never sees event. intent lost.
 
 This is the decisive difference.
 
 ## Step 9: Implementation Order
 
-1. add outbox model/repository
-2. write producer transaction path
-3. implement worker fetch/send/mark loop
-4. add retry and dead-letter logic
-5. add metrics and tests
+add outbox model/repository. write producer transaction path. implement worker fetch/send/mark loop. add retry and dead-letter logic. add metrics and tests.
 
 ## Step 10: Tests You Need
 
@@ -160,10 +141,7 @@ Test 5: max retries routes to dead-letter.
 
 ## Common Mistakes
 
-1. writing outbox row after commit
-2. sending externally inside transaction
-3. no idempotency key
-4. no dead-letter handling
+writing outbox row after commit. sending externally inside transaction. no idempotency key. no dead-letter handling.
 
 ## Interview Wrap-Up Script
 

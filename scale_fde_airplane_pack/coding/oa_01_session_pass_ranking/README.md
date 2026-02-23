@@ -1,753 +1,211 @@
-# OA-01: Session Pass Ranking from Streaming Score Events (Essay Editorial)
-
-This chapter is a full editorial for a data-processing coding round where event deduplication, latest-value semantics, and multi-key ranking must be handled together. The problem is less about syntax and more about correctly preserving business semantics under repeated updates.
-
-Each event has:
-
-- `session_id`
-- `user_id`
-- `score`
-- `timestamp`
-
-A user can emit multiple score events in the same session. Only the latest event by timestamp should count. This requirement is the first trap. If you aggregate directly over all events, pass counts and averages are wrong.
-
-The correct architecture is two-phase aggregation.
-
-Phase one resolves latest value per `(session_id, user_id)`.
-
-Phase two folds those resolved values into per-session summary metrics.
-
-Why two phases? Because "latest event wins" is a relation on user-session pairs, while ranking is a relation on sessions. Merging these concerns in one loop often creates edge-case bugs.
-
-Let us define outputs per session:
-
-- `pass_count`: number of users with latest score >= pass threshold
-- `avg_pass_score`: average of those passing scores
-- `top_user`: passing user with highest score; tie breaks lexicographically by user_id
-
-Sessions with no passing users still appear with `pass_count=0`, `avg_pass_score=0.0`, `top_user=None`.
-
-A careful step-by-step solution:
-
-First pass over events:
-
-Maintain map `latest[(session_id, user_id)] = (timestamp, score)`.
-
-For each event, update only if timestamp is newer than existing value.
-
-Also track all `session_id` values in a set so sessions with zero passing users are retained.
-
-Second pass over `latest` map:
-
-For each resolved score:
-
-- if passing, increment session pass_count
-- add score to pass_sum
-- update top candidate by `(score desc, user_id asc)`
-
-Then materialize rows with rounded average.
-
-Finally sort rows by required ranking:
-
-1. descending pass_count
-2. descending avg_pass_score
-3. ascending session_id
-
-Reference implementation:
-
+﻿# OA-01: Session Pass Ranking
+This chapter is written as a full editorial guide. The purpose is to make the problem understandable from zero while still giving you implementation-level precision. The chapter follows your required structure: prompt, deep understanding, concept realities with sub-realities, and code with line-by-line annotations.
+## Part 1: Prompt
+You are given a list of events. Each event has session_id, user_id, score, and timestamp. Implement session_pass_ranking(events, pass_score). Return one summary row per session with session_id, pass_count, avg_pass_score, and top_user. Rules: for each (session_id, user_id), keep only the newest event by timestamp. A passing user has latest score >= pass_score. top_user is the passing user with maximum passing score. If multiple passing users tie at top score, choose lexicographically smaller user_id. Sessions with zero passing users must still appear in the result with pass_count=0, avg_pass_score=0.0, and top_user=None. Sort output by pass_count descending, then avg_pass_score descending, then session_id ascending.
+### Example Input
+```json
+[
+  {"session_id":"s1","user_id":"u1","score":65,"timestamp":100},
+  {"session_id":"s1","user_id":"u1","score":80,"timestamp":110},
+  {"session_id":"s1","user_id":"u2","score":90,"timestamp":120},
+  {"session_id":"s2","user_id":"u3","score":75,"timestamp":100},
+  {"session_id":"s2","user_id":"u3","score":60,"timestamp":130},
+  {"session_id":"s2","user_id":"u4","score":55,"timestamp":140},
+  {"session_id":"s3","user_id":"u9","score":69,"timestamp":200}
+]
+```
+Use pass_score = 70.
+### Example Output
+```json
+[
+  {"session_id":"s1","pass_count":2,"avg_pass_score":85.0,"top_user":"u2"},
+  {"session_id":"s2","pass_count":0,"avg_pass_score":0.0,"top_user":null},
+  {"session_id":"s3","pass_count":0,"avg_pass_score":0.0,"top_user":null}
+]
+```
+Explanation for the example: for s1, latest scores are u1=80 and u2=90, so both pass, average is 85.0, top_user is u2. For s2, latest scores are u3=60 and u4=55, so none pass, yet s2 remains in output. For s3, latest u9=69 does not pass, and s3 still appears with zero metrics.
+## Part 2: How To Understand The Prompt And What Is Going On
+The central confusion in this problem is mistaking event rows for final state rows. Events are not final truth. Events are updates. Newer updates replace older updates for the same key. The key is not user_id alone. The key is session_id plus user_id. The same user can appear in multiple sessions and those records are independent. Once this key is explicit, the first phase becomes obvious: reconstruct latest user state per session by timestamp comparison. Only after state reconstruction can you aggregate pass metrics. Aggregating first is a semantic bug, not just a style issue. Pass_count is based on latest scores only. Old passing scores that were later replaced by failing scores must not count. Average is also based on passing latest scores only. Dividing by all users in the session is mathematically neat but contractually wrong. Top_user is selected from passing users only. A non-passing user with high old score or high failing score cannot be top_user. You also have a visibility contract: sessions with zero passing users still appear. This means your session set cannot come only from passing records. Output determinism is part of correctness. Missing tie-break rules produce flaky outputs, especially when maps iterate in arbitrary or insertion order. The easiest interview narration is: phase one dedupe by latest timestamp, phase two aggregate pass metrics, phase three deterministic sort. If equal timestamps are possible for the same key and prompt does not define behavior, state your policy. A safe choice is strict greater-than for updates, which means first-seen-wins at equal time. This style of question tests whether you model data reality, not whether you remember one Python trick. Good modeling beats clever one-liners every time. A robust mental shortcut is to ask: if I delete all but newest event per key, does my algorithm still read correctly? If yes, your logic likely respects semantics. When debugging, inspect one session at a time. Validate deduped states, then threshold result, then average and top user. Local reasoning reduces panic. In production terms, this is event-sourced reduction into a materialized report. Interviewers often like hearing this framing because it shows systems awareness. Complexity should be linear for dedupe and aggregation plus sort cost over sessions. If your algorithm repeatedly scans all events per session, it is usually overcomplicated. Do not compress logic too early. Clarity first. Once you pass correctness checks, minor refactors can shorten code without changing semantics. The strongest signal you can send in this round is coherent reasoning from contract to data structure to invariant to output.
+## Part 3: Concepts To Solve The Problem
+This section is the main learning body. Each concept is described as a fundamental reality with several sub-realities.
+### Fundamental Reality 1: Replacement Semantics
+Sub-reality 1A: Every event says what the state might be at that timestamp, not forever. Sub-reality 1B: A later event for the same key replaces earlier state even if later value is lower. Sub-reality 1C: Counting all rows violates replacement semantics and overstates passing performance. Sub-reality 1D: Therefore, dedupe by newest event must precede all summary math. Sub-reality 1E: Invariant: exactly one surviving record per (session_id, user_id) after dedupe.
+### Fundamental Reality 2: Identity Shape
+Sub-reality 2A: Identity is a composite key of session_id and user_id. Sub-reality 2B: Composite keys prevent accidental joins between unrelated sessions. Sub-reality 2C: This identity should appear directly in code as a tuple key for readability. Sub-reality 2D: If key choice is wrong, every downstream metric can look plausible while being wrong. Sub-reality 2E: Correct key modeling is the fastest path to stable logic.
+### Fundamental Reality 3: Threshold Participation
+Sub-reality 3A: pass_score defines who participates in pass metrics and top-user competition. Sub-reality 3B: Thresholding happens after dedupe because freshness determines the effective score. Sub-reality 3C: pass_count counts passing deduped users, not passing events. Sub-reality 3D: pass_sum accumulates only passing scores so average reflects exactly pass-only performance. Sub-reality 3E: Zero-pass sessions use explicit neutral defaults to keep output schema stable.
+### Fundamental Reality 4: Deterministic Winners
+Sub-reality 4A: top_user requires deterministic tie resolution among equal scores. Sub-reality 4B: Lexicographically smaller user_id is a simple deterministic tie-break. Sub-reality 4C: Without tie-break, different runtimes may return different winners for same data. Sub-reality 4D: Deterministic selection simplifies testing and debugging. Sub-reality 4E: Determinism is a contract feature, not optional polish.
+### Fundamental Reality 5: Session Ordering Contract
+Sub-reality 5A: Session rows are sorted by pass_count descending first. Sub-reality 5B: Secondary sort is avg_pass_score descending for sessions with equal pass_count. Sub-reality 5C: Tertiary sort is session_id ascending for full determinism. Sub-reality 5D: Implement sort in one key function to avoid branchy comparator code. Sub-reality 5E: Verify sort behavior with tie-heavy examples, not only clean examples.
+### Fundamental Reality 6: Accumulator Design
+Sub-reality 6A: Per-session accumulator should include pass_count, pass_sum, top_score, and top_user. Sub-reality 6B: Grouping these fields in one object keeps updates local and coherent. Sub-reality 6C: top_score exists to avoid rescanning participants for every new candidate. Sub-reality 6D: Clear accumulator fields make invariants testable and debuggable. Sub-reality 6E: Opaque temporary variables make interview debugging harder than necessary.
+### Fundamental Reality 7: Complexity Boundaries
+Sub-reality 7A: Dedupe pass is O(n) with hash map updates. Sub-reality 7B: Aggregation pass is O(u) where u is deduped user-session pairs. Sub-reality 7C: Final sort is O(s log s) where s is number of sessions. Sub-reality 7D: Memory is O(u + s), which is expected because output depends on those sets. Sub-reality 7E: Complexity explanation should be tied to data cardinality, not just asymptotic symbols.
+### Fundamental Reality 8: Timestamp Tie Policy
+Sub-reality 8A: Equal timestamp behavior is often unspecified and must be made explicit. Sub-reality 8B: Strict-greater update implies first-seen-wins on equal timestamps. Sub-reality 8C: Greater-or-equal update implies last-seen-wins on equal timestamps. Sub-reality 8D: Either policy can pass if communicated and applied consistently. Sub-reality 8E: Hidden assumptions create silent mismatch with interviewer expectations.
+### Fundamental Reality 9: Numeric Precision
+Sub-reality 9A: Keep internal sums unrounded and compute average at finalization time. Sub-reality 9B: Premature rounding can alter ordering when averages are close. Sub-reality 9C: Represent average as float in output even when integral. Sub-reality 9D: For strict financial semantics, decimal types can be discussed as an extension. Sub-reality 9E: For this OA-style problem, float is usually accepted with deterministic arithmetic order.
+### Fundamental Reality 10: Invariant-Driven Debugging
+Sub-reality 10A: Invariant one: one latest record per key after phase one. Sub-reality 10B: Invariant two: pass_count equals number of passing deduped records per session. Sub-reality 10C: Invariant three: top_user is None if and only if pass_count is zero. Sub-reality 10D: Invariant four: avg_pass_score is zero exactly when pass_count is zero. Sub-reality 10E: Invariants reduce debugging from broad panic to local inspection.
+### Fundamental Reality 11: Test Coverage As Proof
+Sub-reality 11A: Include overwrite tests where newer failing score replaces older passing score. Sub-reality 11B: Include equal-top-score tests to validate lexicographic top_user tie-break. Sub-reality 11C: Include sessions that never pass to validate visibility requirements. Sub-reality 11D: Include tie-heavy session ordering tests to validate global deterministic sort. Sub-reality 11E: Good tests demonstrate contract understanding, not only code execution.
+### Fundamental Reality 12: Interview Execution
+Sub-reality 12A: State your two-phase algorithm before coding to align expectations. Sub-reality 12B: Use variable names that encode semantics and reduce cognitive load. Sub-reality 12C: Dry-run the provided example after coding to demonstrate confidence. Sub-reality 12D: Mention one extension path, such as streaming incremental updates. Sub-reality 12E: Finish by restating complexity and deterministic guarantees.
+## Part 4: Move To The Code With Line-By-Line Analysis And Annotations
+The solution below is intentionally explicit so each semantic rule maps cleanly to code.
 ```python
-from typing import List, Dict, Any, Tuple
+from collections import defaultdict
+from typing import Any, Dict, List, Tuple
 
+def session_pass_ranking(events: List[Dict[str, Any]], pass_score: float) -> List[Dict[str, Any]]:
+    latest_state: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
-def session_pass_ranking(events: List[Dict[str, Any]], pass_score: int) -> List[Dict[str, Any]]:
-    latest: Dict[Tuple[str, str], Tuple[int, int]] = {}
-    sessions_seen = set()
+    for event in events:
+        session_id = event["session_id"]
+        user_id = event["user_id"]
+        key = (session_id, user_id)
 
-    for e in events:
-        s = e["session_id"]
-        u = e["user_id"]
-        t = e["timestamp"]
-        sc = e["score"]
-        sessions_seen.add(s)
+        if key not in latest_state:
+            latest_state[key] = event
+            continue
 
-        key = (s, u)
-        if key not in latest or t > latest[key][0]:
-            latest[key] = (t, sc)
+        if event["timestamp"] > latest_state[key]["timestamp"]:
+            latest_state[key] = event
 
-    agg: Dict[str, Dict[str, Any]] = {
-        s: {
-            "session_id": s,
+    session_acc: Dict[str, Dict[str, Any]] = defaultdict(
+        lambda: {
             "pass_count": 0,
-            "pass_sum": 0,
+            "pass_sum": 0.0,
             "top_user": None,
             "top_score": None,
         }
-        for s in sessions_seen
-    }
+    )
 
-    for (s, u), (_t, sc) in latest.items():
-        row = agg[s]
-        if sc >= pass_score:
-            row["pass_count"] += 1
-            row["pass_sum"] += sc
+    for (session_id, user_id), record in latest_state.items():
+        score = float(record["score"])
+        acc = session_acc[session_id]
 
-            if row["top_score"] is None:
-                row["top_score"] = sc
-                row["top_user"] = u
-            elif sc > row["top_score"]:
-                row["top_score"] = sc
-                row["top_user"] = u
-            elif sc == row["top_score"] and u < row["top_user"]:
-                row["top_user"] = u
+        if score >= pass_score:
+            acc["pass_count"] += 1
+            acc["pass_sum"] += score
 
-    out = []
-    for s in sessions_seen:
-        row = agg[s]
-        c = row["pass_count"]
-        avg = (row["pass_sum"] / c) if c else 0.0
-        out.append(
+            if acc["top_score"] is None or score > acc["top_score"]:
+                acc["top_score"] = score
+                acc["top_user"] = user_id
+            elif score == acc["top_score"] and user_id < acc["top_user"]:
+                acc["top_user"] = user_id
+
+    rows: List[Dict[str, Any]] = []
+    for session_id, acc in session_acc.items():
+        pass_count = acc["pass_count"]
+        avg_pass_score = acc["pass_sum"] / pass_count if pass_count else 0.0
+        rows.append(
             {
-                "session_id": s,
-                "pass_count": c,
-                "avg_pass_score": round(avg, 2),
-                "top_user": row["top_user"],
+                "session_id": session_id,
+                "pass_count": pass_count,
+                "avg_pass_score": avg_pass_score,
+                "top_user": acc["top_user"],
             }
         )
 
-    out.sort(key=lambda r: (-r["pass_count"], -r["avg_pass_score"], r["session_id"]))
-    return out
+    rows.sort(key=lambda r: (-r["pass_count"], -r["avg_pass_score"], r["session_id"]))
+    return rows
 ```
-
-Correctness intuition:
-
-- latest map ensures each user contributes at most one score per session
-- second fold computes metrics from canonical user-state, not raw events
-- tie-breaking rule for top_user is enforced deterministically
-- final sort exactly matches ranking contract
-
-Complexity:
-
-- time: `O(n + m log m)` where `n` is event count, `m` is session count
-- space: `O(u)` where `u` is unique `(session,user)` pairs
-
-Useful tests:
-
-```python
-def test_latest_wins():
-    events = [
-        {"session_id": "s1", "user_id": "u1", "score": 50, "timestamp": 1},
-        {"session_id": "s1", "user_id": "u1", "score": 90, "timestamp": 2},
-    ]
-    out = session_pass_ranking(events, 70)
-    assert out[0]["pass_count"] == 1
-
-
-def test_top_user_tie_break():
-    events = [
-        {"session_id": "s1", "user_id": "u2", "score": 95, "timestamp": 3},
-        {"session_id": "s1", "user_id": "u1", "score": 95, "timestamp": 4},
-    ]
-    out = session_pass_ranking(events, 70)
-    assert out[0]["top_user"] == "u1"
-
-
-def test_zero_pass_still_appears():
-    events = [
-        {"session_id": "s1", "user_id": "u1", "score": 10, "timestamp": 1},
-    ]
-    out = session_pass_ranking(events, 70)
-    assert out[0]["pass_count"] == 0
-    assert out[0]["top_user"] is None
-```
-
-Interview close:
-
-"I solve this in two phases: canonicalize latest score per session-user first, then aggregate ranking metrics from canonical state. That cleanly enforces latest-event semantics and keeps the ranking logic deterministic."
-
-## Deep Dive Appendix
-
-This section expands the reasoning behind the two-stage approach, because many candidates understand the implementation but cannot explain why this structure is necessary.
-
-The most important hidden rule in this problem is "latest score per (session, user)." That rule changes the shape of the data before any ranking can be trusted. If you skip that and aggregate directly on raw events, a user who submits five score updates contributes five times to session metrics, which violates business semantics.
-
-A useful way to think about this is that the input stream is not your final dataset. It is a changelog. You must first materialize current user state per session, and only then compute session aggregates.
-
-### Why Two Stages Are Not Optional
-
-Stage 1 answers: what is each user's final score in each session?
-
-Stage 2 answers: given those final scores, how do sessions rank?
-
-If you collapse these into one pass with immediate counting, you create rollback complexity: when a newer score arrives, you must undo old contributions from pass_count, average sum, and top_user candidate. That is possible but error-prone in interview conditions. The two-stage model gives correctness with simpler reasoning.
-
-### Determinism Under Out-of-Order Timestamps
-
-The prompt often implies out-of-order arrival is possible. The `latest` map naturally handles this. You only replace an existing entry when timestamp is strictly newer. If equal timestamps are possible, ask the interviewer how to break ties. Common tie options are:
-
-1. keep first seen
-2. keep last seen
-3. tie-break by event sequence id
-
-If tie behavior is unspecified, state your choice explicitly.
-
-### Subtle Ranking Details
-
-Sorting sessions requires three keys. Explain this clearly in interview:
-
-1. higher pass_count first
-2. if tied, higher avg_pass_score first
-3. if tied, lexicographically smaller session_id first
-
-Also explain top_user tie-break:
-
-- higher passing score wins
-- on equal score, lexicographically smaller user_id wins
-
-That tie-break requirement is often intentionally inserted to test deterministic thinking.
-
-### Manual Dry Run
-
-Suppose `pass_score = 70`.
-
-Events:
-
-- s1,u1,65,t1
-- s1,u1,80,t2
-- s1,u2,90,t3
-- s2,u3,75,t1
-- s2,u3,60,t2
-
-After Stage 1 latest materialization:
-
-- s1,u1 -> 80
-- s1,u2 -> 90
-- s2,u3 -> 60
-
-Stage 2 aggregates:
-
-- s1: pass_count=2, pass_sum=170, avg=85.0, top_user=u2
-- s2: pass_count=0, avg=0.0, top_user=None
-
-Final ranking puts s1 first.
-
-### Common Implementation Pitfalls
-
-1. Forgetting sessions with zero passing users.
-2. Updating top_user using all scores instead of passing scores only.
-3. Rounding average too early during accumulation.
-4. Treating duplicate timestamps inconsistently.
-
-### Interview Follow-Up: Streaming Incremental Version
-
-If asked to support continuous event ingestion, mention this evolution path:
-
-1. Keep latest state map in memory or key-value store.
-2. On score update, remove old contribution then apply new contribution to per-session stats.
-3. Maintain an ordered structure for top sessions if real-time rank queries are needed.
-
-In live interviews, you can say:
-
-"I would start with batch-correctness first, then evolve to incremental updates by maintaining inverse delta updates per user-session mutation."
-
-### Communicating Complexity Clearly
-
-- Stage 1 scan: O(n)
-- Stage 2 fold over unique pairs: O(u)
-- Final sort sessions: O(m log m)
-
-Where:
-
-- n = number of events
-- u = number of unique (session,user)
-- m = number of sessions
-
-This complexity breakdown signals mature reasoning.
-
-## Algorithmic Foundations For This Problem
-
-Restate input and output contract in deterministic terms.
-Define tie-breakers explicitly.
-Define malformed-input behavior explicitly.
-
-Write invariants before coding.
-Invariants reduce logical bugs.
-Examples include deterministic ordering and no duplicate contribution.
-
-Choose data structures based on semantics.
-Use map for dedupe and latest-by-key patterns.
-Use heap for progressive ordering extraction.
-Use stack for nested grammar.
-Use deque for sliding windows.
-
-Separate transformation phase from aggregation phase when semantics differ.
-Dry-run tiny examples before implementation.
-Then scale to stress tests.
-
-Complexity should be explained phase-by-phase.
-Prefer clarity first, then optimize if bottlenecks are measured.
-
-### Extended Teaching Block 1
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 2
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 3
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 4
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 5
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 6
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 7
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 8
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 9
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 10
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 11
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 12
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 13
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 14
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 15
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 16
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 17
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 18
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 19
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 20
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 21
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 22
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 23
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 24
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 25
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 26
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 27
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 28
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 29
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 30
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-
-### Extended Teaching Block 31
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 32
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 33
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 34
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 35
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 36
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-Complexity Note: sorting is often O(n log n), hash-based folds are often O(n).
-Correctness Note: prove invariant preservation after each record update.
-
-### Extended Teaching Block 37
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
-
-### Extended Teaching Block 38
-This block deepens algorithmic reasoning in clear incremental steps.
-Normalize input format first so later logic remains deterministic.
-If dedupe is required, define key and dedupe timing before aggregation.
-If ordering matters, define stable sort keys and tie-breakers explicitly.
-State what happens on malformed or missing fields.
-Use small dry-runs to validate boundary conditions and tie behavior.
-Write tests for empty input, single row, duplicates, ties, and stress cases.
-Separate algorithm phases so complexity analysis is transparent.
-Keep names descriptive so state transitions are easy to follow.
-Prefer deterministic output over opaque shortcuts.
+Line-by-line commentary follows. Each entry explains what the line does and why it exists.
+### Line 1
+Source text: from collections import defaultdict This lazy initializer creates clean per-session accumulators on demand, reducing manual existence checks. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 2
+Source text: from typing import Any, Dict, List, Tuple Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 4
+Source text: def session_pass_ranking(events: List[Dict[str, Any]], pass_score: float) -> List[Dict[str, Any]]: Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 5
+Source text: latest_state: Dict[Tuple[str, str], Dict[str, Any]] = {} This creates the deduplicated state map. Without this map, stale records would leak into pass metrics and ranking. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 7
+Source text: for event in events: Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 8
+Source text: session_id = event["session_id"] Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 9
+Source text: user_id = event["user_id"] Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 10
+Source text: key = (session_id, user_id) This defines the exact identity boundary used by replacement semantics. The tuple keeps per-session user states independent. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 12
+Source text: if key not in latest_state: This handles first-seen state for a key. Initial insert avoids unnecessary comparisons and keeps logic straightforward. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 13
+Source text: latest_state[key] = event Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 14
+Source text: continue Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 16
+Source text: if event["timestamp"] > latest_state[key]["timestamp"]: This is the freshness gate. Only newer timestamps replace stored state, which enforces latest-update semantics deterministically. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 17
+Source text: latest_state[key] = event Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 19
+Source text: session_acc: Dict[str, Dict[str, Any]] = defaultdict( This lazy initializer creates clean per-session accumulators on demand, reducing manual existence checks. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 20
+Source text: lambda: { Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 21
+Source text: "pass_count": 0, This initializes the passing user counter for each session. It remains zero if no user crosses the threshold. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 22
+Source text: "pass_sum": 0.0, This initializes the passing score sum in floating-point form so average division behaves consistently. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 23
+Source text: "top_user": None, This initializes top_user as absent. It is intentionally None for sessions where no user passes. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 24
+Source text: "top_score": None, This initializes comparison baseline for selecting the top passing user in constant time per passing record. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 25
+Source text: } Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 26
+Source text: ) Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 28
+Source text: for (session_id, user_id), record in latest_state.items(): This begins phase two over deduplicated truth records. Aggregation after dedupe is the key correctness boundary. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 29
+Source text: score = float(record["score"]) This normalizes score to numeric form used in thresholding and arithmetic. It avoids type drift in mixed int/float inputs. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 30
+Source text: acc = session_acc[session_id] Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 32
+Source text: if score >= pass_score: This threshold branch decides metric participation. Only passing latest records affect pass_count, average, and top_user. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 33
+Source text: acc["pass_count"] += 1 This increments the passing population for the session, defining the denominator of average pass score. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 34
+Source text: acc["pass_sum"] += score This accumulates passing score mass that will later be divided by pass_count to compute the contract average. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 36
+Source text: if acc["top_score"] is None or score > acc["top_score"]: This initializes comparison baseline for selecting the top passing user in constant time per passing record. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 37
+Source text: acc["top_score"] = score Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 38
+Source text: acc["top_user"] = user_id This writes the current winning user id for the session. It is coupled with top_score updates for consistency. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 39
+Source text: elif score == acc["top_score"] and user_id < acc["top_user"]: This is deterministic tie-break logic. Equal top scores are resolved lexicographically so tests are stable. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 40
+Source text: acc["top_user"] = user_id This writes the current winning user id for the session. It is coupled with top_score updates for consistency. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 42
+Source text: rows: List[Dict[str, Any]] = [] Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 43
+Source text: for session_id, acc in session_acc.items(): Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 44
+Source text: pass_count = acc["pass_count"] Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 45
+Source text: avg_pass_score = acc["pass_sum"] / pass_count if pass_count else 0.0 This initializes the passing user counter for each session. It remains zero if no user crosses the threshold. Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 46
+Source text: rows.append( Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 47
+Source text: { Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 48
+Source text: "session_id": session_id, Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 49
+Source text: "pass_count": pass_count, Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 50
+Source text: "avg_pass_score": avg_pass_score, Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 51
+Source text: "top_user": acc["top_user"], Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 52
+Source text: } Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 53
+Source text: ) Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 55
+Source text: rows.sort(key=lambda r: (-r["pass_count"], -r["avg_pass_score"], r["session_id"])) Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+### Line 56
+Source text: return rows Reasoning anchor: this line belongs to one of the three contracts you must preserve during interviews: latest-state reconstruction, pass-only aggregation, or deterministic ordering.
+## Closing Paragraph
+If you feel overloaded, collapse the entire question into one mantra: reconstruct latest state per user per session, then aggregate pass metrics, then sort deterministically. Repeat that mantra while coding, and most failure modes disappear.
+## Appendix: Full Step-By-Step Walkthrough Narrative
+Assume the interviewer asks you to solve this from scratch without writing code immediately. You start by repeating the contract in your own words to confirm alignment. You say that each event is an update, not a final row for aggregation. You say the identity of an update is session_id plus user_id. You say timestamp decides which update survives for each identity key. You say that only surviving latest records can participate in pass metrics. You say top_user is selected only among passers, with lexicographic tie-break. You say sessions with zero passers must still appear as explicit zero rows. You say final sorting is deterministic over three keys in exact order. Now you dry-run with an empty map for latest state. You ingest the first event and insert its key-value pair. You ingest the second event for same key and replace because timestamp is newer. You ingest a third event for a different key and insert normally. You continue this process until every event is processed once. At this stage you can print latest_state to verify phase-one correctness. You fix dedupe first because all metrics depend on that map. Once dedupe is correct, you create per-session accumulators. Each accumulator starts with pass_count zero, pass_sum zero, top_user none, top_score none. You iterate deduped records and route each record to its session accumulator. For each record, you test score against pass_score. If score fails threshold, you skip metric updates but keep session visibility. If score passes threshold, you increment pass_count and add score to pass_sum. Then you compare score with top_score for top_user selection. If score is strictly greater, current user replaces top_user. If score ties top_score, lexicographically smaller user wins. After processing all deduped records, each session accumulator is complete. Now you materialize output rows from accumulators. For each session, average is pass_sum divided by pass_count when pass_count is positive. For each session with pass_count zero, average is explicitly 0.0. For each session with pass_count zero, top_user remains None. Then you perform one deterministic sort using all three keys. Primary key uses negative pass_count for descending order. Secondary key uses negative average for descending order. Tertiary key uses raw session_id for ascending lexical order. At this point output rows are contract-compliant. Then you do a verbal verification against the sample input-output pair. You confirm that overwritten scores are not double-counted. You confirm that failing latest scores can erase earlier passing states. You confirm that zero-pass sessions are visible in final output. You confirm that tie scenarios are deterministic. If interviewer asks for complexity, you answer in cardinality terms. Dedupe is linear in number of events. Aggregation is linear in number of deduped keys. Sorting is session_count times log of session_count. Memory is proportional to deduped keys plus sessions. If interviewer asks where bugs happen most, you mention three hotspots. Hotspot two is aggregating before dedupe. Hotspot three is missing tie-break logic. If interviewer asks for production extension, you propose incremental updates. You keep latest_state in a store and update session aggregates by delta. On each new event, you remove old contribution and apply new contribution. This preserves the same semantics while enabling streaming behavior. If interviewer asks about equal timestamps, you declare policy clearly. You can keep strict-greater replacement for first-seen-wins. Either is acceptable when declared and tested. If interviewer asks for test strategy, you propose scenario-first tests. One test where passing is overwritten by failing. One test with top-score tie among passers. One test with complete metric ties requiring session_id ordering. One test with empty input returning empty output. This appendix is intentionally narrative so you can read it like a script. If you rehearse this exact flow, the coding round becomes deterministic.

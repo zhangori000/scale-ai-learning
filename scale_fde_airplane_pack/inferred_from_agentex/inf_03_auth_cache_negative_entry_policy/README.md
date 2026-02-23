@@ -1,12 +1,10 @@
-# INF-03 Coding Round Editorial: Auth Cache Negative Entry Policy
+﻿# INF-03 Coding Round Editorial: Auth Cache Negative Entry Policy
 
 This chapter teaches a deep, interview-ready implementation of authentication caching that is fast under normal load and safe during backend incidents.
 
 Grounded source files:
 
-- `scale-agentex/agentex/src/api/authentication_middleware.py`
-- `scale-agentex/agentex/src/api/authentication_cache.py`
-- `scale-agentex/agentex/src/api/middleware_utils.py`
+`scale-agentex/agentex/src/api/authentication_middleware.py`. `scale-agentex/agentex/src/api/authentication_cache.py`. `scale-agentex/agentex/src/api/middleware_utils.py`.
 
 ## The Actual Problem
 
@@ -14,10 +12,7 @@ Auth caching is easy to add and easy to get wrong.
 
 The dangerous failure mode is cache poisoning:
 
-1. backend verifier has temporary outage
-2. middleware treats temporary failure as invalid credential
-3. negative cache stores failure
-4. valid users are denied until TTL expires
+backend verifier has temporary outage. middleware treats temporary failure as invalid credential. negative cache stores failure. valid users are denied until TTL expires.
 
 So the true problem is not "add cache." It is "classify failures correctly before caching."
 
@@ -25,9 +20,7 @@ So the true problem is not "add cache." It is "classify failures correctly befor
 
 Every auth verification outcome must be one of three classes:
 
-1. `VALID`: credential is confirmed valid.
-2. `INVALID`: credential is confirmed invalid.
-3. `TEMP_FAILURE`: verifier unavailable, timeout, or internal error.
+`VALID`: credential is confirmed valid. `INVALID`: credential is confirmed invalid. `TEMP_FAILURE`: verifier unavailable, timeout, or internal error.
 
 Only one of these (`INVALID`) belongs in short negative cache.
 
@@ -47,9 +40,7 @@ A naive answer can reduce DB traffic while creating user lockout during incident
 
 Write this first:
 
-- VALID -> positive cache (`ttl=300s`, example)
-- INVALID -> negative cache (`ttl=5-15s`)
-- TEMP_FAILURE -> no negative cache
+VALID -> positive cache (`ttl=300s`, example). INVALID -> negative cache (`ttl=5-15s`). TEMP_FAILURE -> no negative cache.
 
 This one table drives correct implementation.
 
@@ -90,9 +81,7 @@ async def verify_api_key(api_key: str) -> VerifyOutcome:
 
 Why separate?
 
-1. different TTLs
-2. clearer observability
-3. less accidental key collision between states
+different TTLs. clearer observability. less accidental key collision between states.
 
 ## Step 4: Middleware Decision Flow
 
@@ -117,9 +106,7 @@ Positive cache can outlive key state changes.
 
 Add invalidation on:
 
-1. key created
-2. key rotated
-3. key revoked
+key created. key rotated. key revoked.
 
 If invalidation hooks are not available, reduce positive TTL.
 
@@ -133,27 +120,17 @@ Operationally, `503` is cleaner for incident triage.
 
 Without fix:
 
-1. 12:00 verifier timeout
-2. valid key cached negative
-3. 12:01 verifier recovers
-4. valid key still denied until 12:05 TTL expiry
+12:00 verifier timeout. valid key cached negative. 12:01 verifier recovers. valid key still denied until 12:05 TTL expiry.
 
 With fix:
 
-1. 12:00 verifier timeout
-2. no negative cache insertion
-3. 12:01 verifier recovers
-4. next request succeeds immediately
+12:00 verifier timeout. no negative cache insertion. 12:01 verifier recovers. next request succeeds immediately.
 
 This timeline often convinces interviewers quickly.
 
 ## Step 8: Implementation Order
 
-1. introduce typed outcome model
-2. update verifier mapping
-3. split positive/negative cache APIs
-4. enforce middleware decision policy
-5. add metrics and tests
+introduce typed outcome model. update verifier mapping. split positive/negative cache APIs. enforce middleware decision policy. add metrics and tests.
 
 ## Step 9: Tests You Must Include
 
@@ -169,10 +146,7 @@ Test 5: concurrent requests keep consistent cache entries.
 
 ## Common Mistakes
 
-1. same TTL for positive and negative entries
-2. caching transient 5xx outcomes as invalid
-3. no invalidation for key lifecycle events
-4. no metrics to detect poisoning
+same TTL for positive and negative entries. caching transient 5xx outcomes as invalid. no invalidation for key lifecycle events. no metrics to detect poisoning.
 
 ## Interview Wrap-Up Script
 
