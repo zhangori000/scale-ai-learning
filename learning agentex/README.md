@@ -17,28 +17,32 @@ From the Scale launch post (published **November 13, 2025**), Agentex is positio
 
 ## What this folder gives you
 
-1. `01_prerequisites_roadmap.md`  
+1. `06_what_this_codebase_does_and_who_uses_it.md`  
+Direct answer to: what this repo does, whether it's a product vs infrastructure, and who uses it.
+
+2. `01_prerequisites_roadmap.md`  
 What to learn before diving into code, in priority order.
 
-2. `02_repo_map_and_first_navigation.md`  
+3. `02_repo_map_and_first_navigation.md`  
 A map of the repo so you know what each major folder does.
 
-3. `03_first_run_playbook.md`  
+4. `03_first_run_playbook.md`  
 Hands-on commands/checkpoints to run the stack and your first agent.
 
-4. `04_study_plan_14_days.md`  
+5. `04_study_plan_14_days.md`  
 A concrete two-week learning path with outcomes each day.
 
-5. `05_sources.md`  
+6. `05_sources.md`  
 Primary links and local docs used to build this guide.
 
 ## Recommended read order
 
 1. This file
-2. `01_prerequisites_roadmap.md`
-3. `02_repo_map_and_first_navigation.md`
-4. `03_first_run_playbook.md`
-5. `04_study_plan_14_days.md`
+2. `06_what_this_codebase_does_and_who_uses_it.md`
+3. `01_prerequisites_roadmap.md`
+4. `02_repo_map_and_first_navigation.md`
+5. `03_first_run_playbook.md`
+6. `04_study_plan_14_days.md`
 
 ## Expected outcome after this pack
 
