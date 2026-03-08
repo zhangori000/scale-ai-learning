@@ -43,6 +43,28 @@ Workers poll the queue and run:
 python "learning agentex\codex_learning\temporal_mock\mini_temporal.py"
 ```
 
+## Run the signal demo
+
+```powershell
+python "learning agentex\codex_learning\temporal_mock\mini_temporal_signals.py"
+```
+
+`mini_temporal_signals.py` adds:
+- `wait_for_signal("name")` in workflow code
+- `signal_workflow(workflow_id, signal_name, payload)` as external signal API
+- buffering for signals that arrive before workflow starts waiting
+
+## Run the Agentex-style split mock
+
+```powershell
+python "learning agentex\codex_learning\temporal_mock\agentex_temporal_style_mock\demo_end_to_end.py"
+```
+
+This version mirrors docs structure:
+- `workflow.py`
+- `acp.py`
+- `run_worker.py`
+
 ## What to observe
 
 1. `charge_card` fails on first attempt, then succeeds on retry.
