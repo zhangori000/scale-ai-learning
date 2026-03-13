@@ -66,6 +66,17 @@ Current demo starts three workflows on the same queue:
 - `CoinbaseWorkflow`
 - `CoindeskWorkflow`
 
+## Run the service-style demo (closer to real Agentex)
+
+```powershell
+python "learning agentex\codex_learning\temporal_mock\agentex_temporal_style_mock\demo_via_agentex_service.py"
+```
+
+This version adds:
+- `agentex_service.py`: mock Agentex Server boundary
+- `AgentexClientMock`: client-facing API-like calls (`create_task`, `send_event`)
+- internal Task/Agent creation inside the service layer (not in demo call sites)
+
 ## End-to-end connection map
 
 1. `demo_end_to_end.py`
@@ -84,3 +95,8 @@ Current demo starts three workflows on the same queue:
 
 5. `activities.py`
 - Implements side-effect functions used by workflow (`create_message`, `fetch_briefing`, `analyze_sentiment`).
+
+6. `agentex_service.py`
+- Emulates "Client -> Agentex Server -> ACP adapter" bridge.
+- Resolves `agent_name` to the right `TemporalACP` and workflow class.
+- Creates `CreateTaskParams` and `SendEventParams` internally.

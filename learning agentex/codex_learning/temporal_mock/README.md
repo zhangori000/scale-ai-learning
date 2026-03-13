@@ -65,6 +65,23 @@ This version mirrors docs structure:
 - `acp.py`
 - `run_worker.py`
 
+Service-style variant (closer to real Agentex API boundary):
+
+```powershell
+python "learning agentex\codex_learning\temporal_mock\agentex_temporal_style_mock\demo_via_agentex_service.py"
+```
+
+## Run the Base Async ACP-style mock
+
+```powershell
+python "learning agentex\codex_learning\temporal_mock\agentex_base_style_mock\demo_end_to_end.py"
+```
+
+This version mirrors Base Async ACP docs:
+- manual `@acp.on_task_create`, `@acp.on_task_event_send`, `@acp.on_task_cancel`
+- explicit `adk.state` CRUD
+- explicit `adk.messages.create`
+
 ## What to observe
 
 1. `charge_card` fails on first attempt, then succeeds on retry.
