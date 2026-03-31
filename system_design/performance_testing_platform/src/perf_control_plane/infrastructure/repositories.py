@@ -14,6 +14,13 @@ from perf_control_plane.domain.entities.test_configs import (
     TestConfigFolderEntity,
 )
 from perf_control_plane.domain.exceptions import NotFoundError
+from perf_control_plane.domain.ports.repositories import (
+    EndpointRepository,
+    FolderRepository,
+    RunRepository,
+    SavedTestConfigRepository,
+    ScenarioRepository,
+)
 from perf_control_plane.infrastructure.models import (
     EndpointModel,
     FolderModel,
@@ -33,7 +40,10 @@ class SqlAlchemyRepository(Generic[ModelT]):
         await self._session.commit()
 
 
-class SqlAlchemyEndpointRepository(SqlAlchemyRepository[EndpointModel]):
+class SqlAlchemyEndpointRepository(
+    SqlAlchemyRepository[EndpointModel],
+    EndpointRepository,
+):
     async def create(self, endpoint: EndpointEntity) -> EndpointEntity:
         model = EndpointModel(**endpoint.to_dict())
         self._session.add(model)
@@ -54,7 +64,10 @@ class SqlAlchemyEndpointRepository(SqlAlchemyRepository[EndpointModel]):
         return [EndpointEntity.from_model(item) for item in rows.scalars().all()]
 
 
-class SqlAlchemyScenarioRepository(SqlAlchemyRepository[ScenarioModel]):
+class SqlAlchemyScenarioRepository(
+    SqlAlchemyRepository[ScenarioModel],
+    ScenarioRepository,
+):
     async def create(self, scenario: ScenarioEntity) -> ScenarioEntity:
         model = ScenarioModel(
             id=scenario.id,
@@ -116,7 +129,10 @@ class SqlAlchemyScenarioRepository(SqlAlchemyRepository[ScenarioModel]):
         )
 
 
-class SqlAlchemyRunRepository(SqlAlchemyRepository[RunModel]):
+class SqlAlchemyRunRepository(
+    SqlAlchemyRepository[RunModel],
+    RunRepository,
+):
     async def create(self, run: PerfTestRunEntity) -> PerfTestRunEntity:
         model = self._to_model(run)
         self._session.add(model)
@@ -227,7 +243,10 @@ class SqlAlchemyRunRepository(SqlAlchemyRepository[RunModel]):
         )
 
 
-class SqlAlchemyFolderRepository(SqlAlchemyRepository[FolderModel]):
+class SqlAlchemyFolderRepository(
+    SqlAlchemyRepository[FolderModel],
+    FolderRepository,
+):
     async def create(self, folder: TestConfigFolderEntity) -> TestConfigFolderEntity:
         model = FolderModel(**folder.to_dict())
         self._session.add(model)
@@ -248,7 +267,10 @@ class SqlAlchemyFolderRepository(SqlAlchemyRepository[FolderModel]):
         return [TestConfigFolderEntity.from_model(item) for item in rows.scalars().all()]
 
 
-class SqlAlchemySavedTestConfigRepository(SqlAlchemyRepository[SavedTestConfigModel]):
+class SqlAlchemySavedTestConfigRepository(
+    SqlAlchemyRepository[SavedTestConfigModel],
+    SavedTestConfigRepository,
+):
     async def create(self, config: SavedTestConfigEntity) -> SavedTestConfigEntity:
         model = SavedTestConfigModel(
             id=config.id,

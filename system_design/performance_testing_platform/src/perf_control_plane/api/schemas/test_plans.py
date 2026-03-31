@@ -6,13 +6,13 @@ from perf_control_plane.domain.entities.base import BaseModel
 from perf_control_plane.domain.entities.test_plans import WorkloadRole
 
 
-class LoadSegmentRequest(BaseModel):
+class TimeSegmentRequest(BaseModel):
     duration_seconds: int
     scenario_starts_per_second: int
     max_concurrency: int | None = None
 
 
-class SteppedTimeLoadProfileRequest(BaseModel):
+class TimeRampProfileRequest(BaseModel):
     initial_scenario_starts_per_second: int = 1000
     step_size: int = 250
     step_count: int = 3
@@ -20,13 +20,13 @@ class SteppedTimeLoadProfileRequest(BaseModel):
     max_concurrency: int | None = None
 
 
-class BudgetLoadBandRequest(BaseModel):
+class BudgetSegmentRequest(BaseModel):
     share: float
     scenario_starts_per_second: int
     max_concurrency: int | None = None
 
 
-class BudgetStepLoadProfileRequest(BaseModel):
+class BudgetRampProfileRequest(BaseModel):
     part_count: int = 3
     initial_scenario_starts_per_second: int = 1000
     step_size: int = 250
@@ -34,10 +34,10 @@ class BudgetStepLoadProfileRequest(BaseModel):
 
 
 class WorkloadExecutionSettingsRequest(BaseModel):
-    load_segments: list[LoadSegmentRequest] = Field(default_factory=list)
-    stepped_load_profile: SteppedTimeLoadProfileRequest | None = None
-    budget_bands: list[BudgetLoadBandRequest] = Field(default_factory=list)
-    budget_step_profile: BudgetStepLoadProfileRequest | None = None
+    time_segments: list[TimeSegmentRequest] = Field(default_factory=list)
+    time_ramp_profile: TimeRampProfileRequest | None = None
+    budget_segments: list[BudgetSegmentRequest] = Field(default_factory=list)
+    budget_ramp_profile: BudgetRampProfileRequest | None = None
     max_total_scenario_starts: int | None = None
     stop_when_budget_exhausted: bool = True
 

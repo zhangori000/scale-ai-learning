@@ -4,6 +4,11 @@ import asyncio
 
 from perf_control_plane.config.settings import Settings
 from perf_control_plane.domain.entities.endpoints import EndpointEntity, HttpMethod, RiskClass
+from perf_control_plane.domain.entities.load_profiles import (
+    BudgetSegmentEntity,
+    BudgetRampProfileEntity,
+)
+from perf_control_plane.domain.entities.runs import PerfTestRunEntity
 from perf_control_plane.domain.entities.scenarios import (
     ScenarioEntity,
     ScenarioStepEntity,
@@ -13,12 +18,17 @@ from perf_control_plane.domain.entities.test_configs import (
     TestConfigFolderEntity as FolderEntityModel,
 )
 from perf_control_plane.domain.entities.test_plans import (
-    BudgetLoadBandEntity,
-    BudgetStepLoadProfileEntity,
     ScenarioWorkloadEntity,
     TestPlanEntity as PlanTemplateEntity,
     WorkloadExecutionSettingsEntity,
     WorkloadRole,
+)
+from perf_control_plane.domain.ports.repositories import (
+    EndpointRepository,
+    FolderRepository,
+    RunRepository,
+    SavedTestConfigRepository,
+    ScenarioRepository,
 )
 from perf_control_plane.domain.services.compiler_service import CompilerService
 from perf_control_plane.domain.services.run_service import RunService
@@ -28,7 +38,7 @@ from perf_control_plane.domain.services.test_config_service import (
 from perf_control_plane.infrastructure.execution_gateway import HttpExecutionGateway
 
 
-class InMemoryEndpointRepository:
+class InMemoryEndpointRepository(EndpointRepository):
     def __init__(self, endpoints: dict[str, EndpointEntity]) -> None:
         self._endpoints = endpoints
 
@@ -43,7 +53,7 @@ class InMemoryEndpointRepository:
         return list(self._endpoints.values())
 
 
-class InMemoryScenarioRepository:
+class InMemoryScenarioRepository(ScenarioRepository):
     def __init__(self, scenarios: dict[str, ScenarioEntity]) -> None:
         self._scenarios = scenarios
 
@@ -67,28 +77,32 @@ class InMemoryScenarioRepository:
         return [item for item in self._scenarios.values() if item.is_starred]
 
 
-class InMemoryRunRepository:
+class InMemoryRunRepository(RunRepository):
     def __init__(self) -> None:
-        self._runs = {}
+        self._runs: dict[str, PerfTestRunEntity] = {}
 
-    async def create(self, run):
+    async def create(self, run: PerfTestRunEntity) -> PerfTestRunEntity:
         self._runs[run.id] = run
         return run
 
-    async def update(self, run):
+    async def update(self, run: PerfTestRunEntity) -> PerfTestRunEntity:
         self._runs[run.id] = run
         return run
 
-    async def get(self, run_id: str):
+    async def get(self, run_id: str) -> PerfTestRunEntity:
         return self._runs[run_id]
 
-    async def list(self):
+    async def list(self) -> list[PerfTestRunEntity]:
         return sorted(self._runs.values(), key=lambda item: item.created_at, reverse=True)
 
-    async def list_recent(self, limit: int):
+    async def list_recent(self, limit: int) -> list[PerfTestRunEntity]:
         return (await self.list())[:limit]
 
-    async def list_recent_by_saved_config(self, saved_config_id: str, limit: int):
+    async def list_recent_by_saved_config(
+        self,
+        saved_config_id: str,
+        limit: int,
+    ) -> list[PerfTestRunEntity]:
         runs = [
             item
             for item in self._runs.values()
@@ -98,7 +112,7 @@ class InMemoryRunRepository:
         return runs[:limit]
 
 
-class InMemoryFolderRepository:
+class InMemoryFolderRepository(FolderRepository):
     def __init__(self) -> None:
         self._folders = {}
 
@@ -113,7 +127,7 @@ class InMemoryFolderRepository:
         return list(self._folders.values())
 
 
-class InMemorySavedConfigRepository:
+class InMemorySavedConfigRepository(SavedTestConfigRepository):
     def __init__(self) -> None:
         self._configs = {}
 
@@ -250,8 +264,8 @@ def test_saved_config_links_recent_plan_runs_and_stub_workload_metrics():
                             scenario_id=setup_scenario.id,
                             role=WorkloadRole.SETUP,
                             execution_settings=WorkloadExecutionSettingsEntity(
-                                budget_bands=[
-                                    BudgetLoadBandEntity(
+                                budget_segments=[
+                                    BudgetSegmentEntity(
                                         share=1.0,
                                         scenario_starts_per_second=500,
                                     ),
@@ -264,7 +278,7 @@ def test_saved_config_links_recent_plan_runs_and_stub_workload_metrics():
                             scenario_id=measured_scenario.id,
                             role=WorkloadRole.MEASURED,
                             execution_settings=WorkloadExecutionSettingsEntity(
-                                budget_step_profile=BudgetStepLoadProfileEntity(
+                                budget_ramp_profile=BudgetRampProfileEntity(
                                     part_count=3,
                                     initial_scenario_starts_per_second=1000,
                                     step_size=250,

@@ -30,46 +30,6 @@ class ScenarioEntity(BaseModel):
             raise ValueError("scenarios require at least one step")
         return self
 
-class LoadSegmentEntity(BaseModel):
-    duration_seconds: int
-    scenario_starts_per_second: int
-    max_concurrency: int | None = None
-
-
-class SteppedLoadProfileEntity(BaseModel):
-    initial_scenario_starts_per_second: int = 1000
-    step_size: int = 250
-    step_count: int = 3
-    step_duration_seconds: int = 600
-    max_concurrency: int | None = None
-
-    @model_validator(mode="after")
-    def validate_profile(self) -> "SteppedLoadProfileEntity":
-        if self.initial_scenario_starts_per_second <= 0:
-            raise ValueError("initial_scenario_starts_per_second must be positive")
-        if self.step_size < 0:
-            raise ValueError("step_size must be zero or positive")
-        if self.step_count <= 0:
-            raise ValueError("step_count must be positive")
-        if self.step_duration_seconds <= 0:
-            raise ValueError("step_duration_seconds must be positive")
-        return self
-
-    def to_load_segments(self) -> list[LoadSegmentEntity]:
-        return [
-            LoadSegmentEntity(
-                duration_seconds=self.step_duration_seconds,
-                scenario_starts_per_second=(
-                    self.initial_scenario_starts_per_second + (index * self.step_size)
-                ),
-                max_concurrency=self.max_concurrency,
-            )
-            for index in range(self.step_count)
-        ]
-
-    def total_duration_seconds(self) -> int:
-        return self.step_count * self.step_duration_seconds
-
 
 class ResolvedScenarioStepEntity(BaseModel):
     step_index: int

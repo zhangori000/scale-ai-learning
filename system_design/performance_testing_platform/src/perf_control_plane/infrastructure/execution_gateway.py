@@ -80,8 +80,8 @@ class HttpExecutionGateway(ExecutionGateway):
     ) -> list[WorkloadExecutionResultEntity]:
         workload_results: list[WorkloadExecutionResultEntity] = []
         for index, workload in enumerate(bundle.workloads):
-            first_band = workload.load_bands[0]
-            actual_scenario_rate = round(first_band.scenario_starts_per_second * 0.97, 2)
+            first_segment = workload.load_segments[0]
+            actual_scenario_rate = round(first_segment.scenario_starts_per_second * 0.97, 2)
             actual_request_rate = round(
                 actual_scenario_rate * max(len(workload.resolved_steps), 1),
                 2,

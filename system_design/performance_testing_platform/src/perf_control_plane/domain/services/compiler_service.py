@@ -6,7 +6,7 @@ from math import floor
 from perf_control_plane.domain.entities.endpoints import EndpointEntity
 from perf_control_plane.domain.entities.scenarios import ScenarioEntity
 from perf_control_plane.domain.entities.test_plans import (
-    CompiledLoadBandEntity,
+    CompiledLoadSegmentEntity,
     CompiledTestPlanBundleEntity,
     CompiledWorkloadBundleEntity,
     ScenarioWorkloadEntity,
@@ -73,7 +73,7 @@ class CompilerService:
             }
             for index in measured_indexes
         ]
-        load_bands = self._compile_load_bands(workload.execution_settings)
+        load_segments = self._compile_load_segments(workload.execution_settings)
         validation_notes = self._build_validation_notes(
             workload=workload,
             scenario=scenario,
@@ -86,7 +86,7 @@ class CompilerService:
             role=workload.role,
             resolved_steps=resolved_steps,
             measured_targets=measured_targets,
-            load_bands=load_bands,
+            load_segments=load_segments,
             max_total_scenario_starts=workload.execution_settings.max_total_scenario_starts,
             stop_when_budget_exhausted=workload.execution_settings.stop_when_budget_exhausted,
             validation_notes=validation_notes,
@@ -131,26 +131,26 @@ class CompilerService:
             "owner_team": endpoint.owner_team,
         }
 
-    def _compile_load_bands(
+    def _compile_load_segments(
         self,
         execution_settings: WorkloadExecutionSettingsEntity,
-    ) -> list[CompiledLoadBandEntity]:
+    ) -> list[CompiledLoadSegmentEntity]:
         if execution_settings.uses_time_profile():
             return [
-                CompiledLoadBandEntity(
+                CompiledLoadSegmentEntity(
                     sequence=index,
                     profile_family=execution_settings.load_profile_family(),
                     scenario_starts_per_second=segment.scenario_starts_per_second,
                     max_concurrency=segment.max_concurrency,
                     duration_seconds=segment.duration_seconds,
                 )
-                for index, segment in enumerate(execution_settings.effective_load_segments())
+                for index, segment in enumerate(execution_settings.effective_time_segments())
             ]
 
         total_budget = execution_settings.max_total_scenario_starts
         if total_budget is None:
             raise ValidationError("budget-based workloads require max_total_scenario_starts")
-        bands = execution_settings.effective_budget_bands()
+        bands = execution_settings.effective_budget_segments()
         allocated_counts: list[int] = []
         assigned = 0
         for index, band in enumerate(bands):
@@ -162,7 +162,7 @@ class CompilerService:
             allocated_counts.append(scenario_count)
 
         return [
-            CompiledLoadBandEntity(
+            CompiledLoadSegmentEntity(
                 sequence=index,
                 profile_family=execution_settings.load_profile_family(),
                 scenario_starts_per_second=band.scenario_starts_per_second,
@@ -186,7 +186,7 @@ class CompilerService:
         if execution_settings.uses_time_profile():
             planned_scenario_starts = sum(
                 segment.duration_seconds * segment.scenario_starts_per_second
-                for segment in execution_settings.effective_load_segments()
+                for segment in execution_settings.effective_time_segments()
             )
             if execution_settings.max_total_scenario_starts is not None:
                 if planned_scenario_starts > execution_settings.max_total_scenario_starts:
@@ -226,10 +226,10 @@ class CompilerService:
                     f"workload '{workload.name}' measures multiple occurrences of step name '{name}' by step index, not by name"
                 )
 
-        if execution_settings.stepped_load_profile is not None:
-            total_duration = execution_settings.stepped_load_profile.total_duration_seconds()
+        if execution_settings.time_ramp_profile is not None:
+            total_duration = execution_settings.time_ramp_profile.total_duration_seconds()
             notes.append(
-                f"workload '{workload.name}' load bands were derived from the stepped time profile abstraction"
+                f"workload '{workload.name}' load segments were derived from the time ramp profile abstraction"
             )
             if total_duration > 1800:
                 notes.append(
@@ -240,9 +240,9 @@ class CompilerService:
                     f"workload '{workload.name}' is one hour or longer; allow it, but treat it as an operator-reviewed run"
                 )
 
-        if execution_settings.budget_step_profile is not None:
+        if execution_settings.budget_ramp_profile is not None:
             notes.append(
-                f"workload '{workload.name}' budget bands were auto-generated from the budget step profile"
+                f"workload '{workload.name}' budget segments were auto-generated from the budget ramp profile"
             )
 
         return notes

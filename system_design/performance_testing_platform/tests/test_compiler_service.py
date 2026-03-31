@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from perf_control_plane.domain.entities.endpoints import EndpointEntity, HttpMethod, RiskClass
+from perf_control_plane.domain.entities.load_profiles import (
+    BudgetSegmentEntity,
+    BudgetRampProfileEntity,
+    TimeRampProfileEntity,
+)
 from perf_control_plane.domain.entities.scenarios import (
     ScenarioEntity,
     ScenarioStepEntity,
-    SteppedLoadProfileEntity,
 )
 from perf_control_plane.domain.entities.test_plans import (
-    BudgetLoadBandEntity,
-    BudgetStepLoadProfileEntity,
     ScenarioWorkloadEntity,
     TestPlanEntity as PlanTemplateEntity,
     WorkloadExecutionSettingsEntity,
@@ -68,9 +70,9 @@ def test_budget_bands_allocate_exact_counts_and_track_repeated_steps_by_index():
                 scenario_id=scenario.id,
                 role=WorkloadRole.MEASURED,
                 execution_settings=WorkloadExecutionSettingsEntity(
-                    budget_bands=[
-                        BudgetLoadBandEntity(share=0.33, scenario_starts_per_second=1000),
-                        BudgetLoadBandEntity(share=0.67, scenario_starts_per_second=1500),
+                    budget_segments=[
+                        BudgetSegmentEntity(share=0.33, scenario_starts_per_second=1000),
+                        BudgetSegmentEntity(share=0.67, scenario_starts_per_second=1500),
                     ],
                     max_total_scenario_starts=100_000,
                 ),
@@ -86,8 +88,8 @@ def test_budget_bands_allocate_exact_counts_and_track_repeated_steps_by_index():
     )
 
     workload = compiled.workloads[0]
-    assert [item.scenario_count for item in workload.load_bands] == [33_000, 67_000]
-    assert sum(item.scenario_count or 0 for item in workload.load_bands) == 100_000
+    assert [item.scenario_count for item in workload.load_segments] == [33_000, 67_000]
+    assert sum(item.scenario_count or 0 for item in workload.load_segments) == 100_000
     assert [item.step_index for item in workload.measured_targets] == [0, 1, 2]
     assert workload.measured_targets[0].request_name == "step[0].post"
     assert any("budget-based load partitioning" in note for note in workload.validation_notes)
@@ -124,8 +126,8 @@ def test_budget_step_profile_auto_even_and_setup_workload_is_not_measured_by_def
                 scenario_id=setup_scenario.id,
                 role=WorkloadRole.SETUP,
                 execution_settings=WorkloadExecutionSettingsEntity(
-                    budget_bands=[
-                        BudgetLoadBandEntity(share=1.0, scenario_starts_per_second=500),
+                    budget_segments=[
+                        BudgetSegmentEntity(share=1.0, scenario_starts_per_second=500),
                     ],
                     max_total_scenario_starts=25_000,
                 ),
@@ -135,7 +137,7 @@ def test_budget_step_profile_auto_even_and_setup_workload_is_not_measured_by_def
                 scenario_id=measured_scenario.id,
                 role=WorkloadRole.MEASURED,
                 execution_settings=WorkloadExecutionSettingsEntity(
-                    budget_step_profile=BudgetStepLoadProfileEntity(
+                    budget_ramp_profile=BudgetRampProfileEntity(
                         part_count=3,
                         initial_scenario_starts_per_second=1000,
                         step_size=500,
@@ -160,12 +162,12 @@ def test_budget_step_profile_auto_even_and_setup_workload_is_not_measured_by_def
     measured_workload = compiled.workloads[1]
 
     assert setup_workload.measured_targets == []
-    assert [item.scenario_starts_per_second for item in measured_workload.load_bands] == [
+    assert [item.scenario_starts_per_second for item in measured_workload.load_segments] == [
         1000,
         1500,
         2000,
     ]
-    assert [item.scenario_count for item in measured_workload.load_bands] == [
+    assert [item.scenario_count for item in measured_workload.load_segments] == [
         40_000,
         40_000,
         40_000,
@@ -196,8 +198,8 @@ def test_measured_step_override_limits_targets_to_selected_indexes():
                 role=WorkloadRole.MEASURED,
                 measured_step_indexes_override=[0, 2],
                 execution_settings=WorkloadExecutionSettingsEntity(
-                    budget_bands=[
-                        BudgetLoadBandEntity(share=1.0, scenario_starts_per_second=750),
+                    budget_segments=[
+                        BudgetSegmentEntity(share=1.0, scenario_starts_per_second=750),
                     ],
                     max_total_scenario_starts=10_000,
                 ),
@@ -245,7 +247,7 @@ def test_time_step_profile_warns_on_long_runs_and_budget_exhaustion():
                 scenario_id=scenario.id,
                 role=WorkloadRole.MEASURED,
                 execution_settings=WorkloadExecutionSettingsEntity(
-                    stepped_load_profile=SteppedLoadProfileEntity(
+                    time_ramp_profile=TimeRampProfileEntity(
                         initial_scenario_starts_per_second=1000,
                         step_size=500,
                         step_count=6,
